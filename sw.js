@@ -3,7 +3,7 @@
 // internet connection, since it lives in Supabase, not on the device.
 
 const CACHE = "cherrys-shell-v1";
-const SHELL = ["./", "./index.html", "./config.js", "./app.js", "./manifest.json", "./icon-192.png", "./icon-512.png"];
+const SHELL = ["./", "./index.html", "./config.js", "./app.js", "./manifest.json", "./icon-192.png", "./icon-512.png", "./assets/logo-dark-text.png", "./assets/logo-light-text.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)));

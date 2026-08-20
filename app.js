@@ -1,13 +1,14 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { createClient } from "@supabase/supabase-js";
-import { SUPABASE_URL, SUPABASE_ANON_KEY, APP_PIN, APP_NAME } from "./config.js";
+import { SUPABASE_URL, SUPABASE_ANON_KEY, APP_NAME, BUSINESS, INVOICE_PREFIX, STAFF_USERS } from "./config.js";
 
 /* ------------------------------------------------------------------ */
 /* Constants                                                          */
 /* ------------------------------------------------------------------ */
 
 const PAYMENT_MODES = ["Cash", "Benefit Pay", "Bank Transfer", "Scan to Pay"];
+const SALE_MODES = [...PAYMENT_MODES, "Credit"];
 const EXPENSE_CATEGORIES = [
   "Shop Rent", "Electricity Bill", "LMRA Monthly Fees", "Visa Fees",
   "Visa Renewal Fees", "License Renewal", "Staff Salary",
@@ -15,7 +16,7 @@ const EXPENSE_CATEGORIES = [
 ];
 const GOV_CATEGORIES = ["LMRA Monthly Fees", "Visa Fees", "Visa Renewal Fees", "License Renewal"];
 const APPT_STATUS = ["Booked", "Completed", "Cancelled", "No Show"];
-const NAV = [
+const NAV_ADMIN = [
   { key: "dashboard", label: "Dashboard", icon: "dashboard" },
   { key: "customers", label: "Customers", icon: "users" },
   { key: "appointments", label: "Appointments", icon: "calendar" },
@@ -29,6 +30,26 @@ const NAV = [
   { key: "reports", label: "Reports", icon: "file" },
   { key: "whatsapp", label: "WhatsApp Offers", icon: "whatsapp" },
 ];
+const NAV_STAFF = [
+  { key: "sales", label: "Sales & Payments", icon: "wallet" },
+];
+
+/* Invoice numbers like CBL1923-0000001BH-2026 */
+function nextInvoiceNo(sales, dateStr) {
+  const year = new Date(dateStr || todayStr()).getFullYear();
+  const suffix = `BH-${year}`;
+  let max = 0;
+  sales.forEach((s) => {
+    if (s.invoiceNo && s.invoiceNo.endsWith(suffix)) {
+      const match = s.invoiceNo.match(/-(\d{7})BH-/);
+      if (match) max = Math.max(max, parseInt(match[1], 10));
+    }
+  });
+  const seq = String(max + 1).padStart(7, "0");
+  return `${INVOICE_PREFIX}-${seq}${suffix}`;
+}
+
+
 
 const ENTITIES = {
   customers: "customers", staff: "staff", services: "services",
@@ -68,6 +89,26 @@ const waNumber = (mobile) => {
   return n;
 };
 const waLink = (mobile, text) => `https://wa.me/${waNumber(mobile)}?text=${encodeURIComponent(text)}`;
+
+const NUM_WORDS_ONES = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten",
+  "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"];
+const NUM_WORDS_TENS = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
+function intToWords(n) {
+  if (n === 0) return "";
+  if (n < 20) return NUM_WORDS_ONES[n];
+  if (n < 100) return NUM_WORDS_TENS[Math.floor(n / 10)] + (n % 10 ? " " + NUM_WORDS_ONES[n % 10] : "");
+  if (n < 1000) return NUM_WORDS_ONES[Math.floor(n / 100)] + " Hundred" + (n % 100 ? " " + intToWords(n % 100) : "");
+  if (n < 1000000) return intToWords(Math.floor(n / 1000)) + " Thousand" + (n % 1000 ? " " + intToWords(n % 1000) : "");
+  return String(n);
+}
+function numberToWordsBHD(amount) {
+  const n = Math.max(0, Number(amount) || 0);
+  const dinars = Math.floor(n);
+  const fils = Math.round((n - dinars) * 1000);
+  let out = dinars === 0 ? "Zero Dinars" : `${intToWords(dinars)} Dinar${dinars === 1 ? "" : "s"}`;
+  if (fils > 0) out += ` and ${intToWords(fils)} Fils`;
+  return out + " Only";
+}
 
 /* ------------------------------------------------------------------ */
 /* Supabase-backed persistent list hook                               */
@@ -312,9 +353,11 @@ function confirmDelete(msg) { return window.confirm(msg || "Delete this record? 
 /* MAIN APP                                                            */
 /* ================================================================== */
 
-export default function App({ supabase }) {
+export default function App({ supabase, currentUser, onLogout }) {
   const [navOpen, setNavOpen] = useState(false);
-  const [tab, setTab] = useState("dashboard");
+  const isStaff = currentUser.role === "staff";
+  const [tab, setTab] = useState(isStaff ? "sales" : "dashboard");
+  const NAV = isStaff ? NAV_STAFF : NAV_ADMIN;
 
   const [customers, setCustomers, lCust] = useSupabaseList(supabase, ENTITIES.customers, []);
   const [staff, setStaff, lStaff] = useSupabaseList(supabase, ENTITIES.staff, []);
@@ -334,6 +377,34 @@ export default function App({ supabase }) {
   const staffMap = useMemo(() => Object.fromEntries(staff.map(s => [s.id, s])), [staff]);
   const svcMap = useMemo(() => Object.fromEntries(services.map(s => [s.id, s])), [services]);
   const suppMap = useMemo(() => Object.fromEntries(suppliers.map(s => [s.id, s])), [suppliers]);
+
+  // ---- Admin notifications: fires when someone else adds a sale ----
+  const [notifications, setNotifications] = useState([]);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const prevSalesIds = useRef(null);
+
+  useEffect(() => {
+    if (currentUser.role !== "admin" || !lSales) return;
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission().catch(() => {});
+    }
+  }, [currentUser.role, lSales]);
+
+  useEffect(() => {
+    if (currentUser.role !== "admin" || !lSales) return;
+    const ids = new Set(sales.map((s) => s.id));
+    if (prevSalesIds.current) {
+      const added = sales.filter((s) => !prevSalesIds.current.has(s.id) && s.addedBy && s.addedBy !== currentUser.name);
+      added.forEach((s) => {
+        const text = `${s.addedBy} added a sale: ${custMap[s.customerId]?.name || "Walk-in"} — ${fmtMoney(s.amount)}`;
+        setNotifications((prev) => [{ id: s.id, text, time: new Date().toISOString() }, ...prev].slice(0, 30));
+        if ("Notification" in window && Notification.permission === "granted") {
+          try { new Notification("Cherrys Beauty Lounge", { body: text }); } catch (e) {}
+        }
+      });
+    }
+    prevSalesIds.current = ids;
+  }, [sales, currentUser, lSales, custMap]);
 
   // customer visit stats: derived from completed appointments + sales
   const customerStats = useMemo(() => {
@@ -381,15 +452,11 @@ export default function App({ supabase }) {
       ) : (
         <div className="flex">
           {/* Sidebar */}
-          <aside className={`no-print fixed z-40 h-screen w-64 shrink-0 overflow-y-auto bg-gradient-to-b from-[#E0447C] via-[#B0225F] to-[#5C1140] text-white transition-transform md:static md:translate-x-0 ${navOpen ? "translate-x-0" : "-translate-x-full"}`}>
-            <div className="flex items-center gap-2 border-b border-white/10 px-5 py-5">
-              <div className="rounded-full bg-[#E8C888]/25 p-2"><AppIcon name="sparkle" size={18} className="text-[#F5DBA0]" /></div>
-              <div>
-                <div className="cbl-heading text-lg leading-tight">Cherrys</div>
-                <div className="text-[10px] uppercase tracking-[0.2em] text-[#E8C888]">Beauty Lounge</div>
-              </div>
+          <aside className={`no-print fixed z-40 flex h-screen w-64 shrink-0 flex-col overflow-y-auto bg-gradient-to-b from-[#E0447C] via-[#B0225F] to-[#5C1140] text-white transition-transform md:static md:translate-x-0 ${navOpen ? "translate-x-0" : "-translate-x-full"}`}>
+            <div className="border-b border-white/10 px-5 py-6">
+              <img src="./assets/logo-light-text.png" alt="Cherrys Beauty Lounge" className="h-9 w-auto object-contain" />
             </div>
-            <nav className="px-3 py-4">
+            <nav className="flex-1 px-3 py-4">
               {NAV.map(item => {
                 const active = tab === item.key;
                 return (
@@ -403,29 +470,75 @@ export default function App({ supabase }) {
                 );
               })}
             </nav>
+            <div className="border-t border-white/10 px-4 py-4">
+              <div className="mb-2 text-xs text-white/60">Signed in as</div>
+              <div className="mb-3 flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-semibold">{currentUser.name}</div>
+                  <div className="text-[10px] uppercase tracking-wide text-[#E8C888]">{currentUser.role}</div>
+                </div>
+              </div>
+              <button onClick={onLogout} className="flex w-full items-center justify-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-xs font-medium hover:bg-white/20">
+                <AppIcon name="close" size={12} /> Log out
+              </button>
+            </div>
           </aside>
           {navOpen && <div className="no-print fixed inset-0 z-30 bg-black/40 md:hidden" onClick={() => setNavOpen(false)} />}
 
           {/* Main */}
           <main className="min-h-screen w-full flex-1 md:ml-0">
-            <div className="no-print sticky top-0 z-20 flex items-center gap-3 border-b border-[#efe6e0] bg-[#FFF6F8]/90 px-4 py-3 backdrop-blur md:hidden">
-              <button onClick={() => setNavOpen(true)} className="rounded-lg p-2 text-[#D6336C] hover:bg-black/5"><AppIcon name="menu" size={20} /></button>
-              <div className="cbl-heading text-base text-[#2B2320]">Cherrys Beauty Lounge</div>
+            <div className="no-print sticky top-0 z-20 flex items-center gap-3 border-b border-[#efe6e0] bg-[#FFF6F8]/90 px-4 py-3 backdrop-blur">
+              <button onClick={() => setNavOpen(true)} className="rounded-lg p-2 text-[#D6336C] hover:bg-black/5 md:hidden"><AppIcon name="menu" size={20} /></button>
+              <img src="./assets/logo-dark-text.png" alt="Cherrys Beauty Lounge" className="h-6 w-auto object-contain md:hidden" />
+              <div className="ml-auto">
+                {currentUser.role === "admin" && (
+                  <div className="relative">
+                    <button onClick={() => setNotifOpen((v) => !v)} className="relative rounded-full p-2 text-[#D6336C] hover:bg-[#D6336C]/10">
+                      <AppIcon name="whatsapp" size={18} />
+                      {notifications.length > 0 && (
+                        <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-[#B23A3A] text-[9px] font-bold text-white">
+                          {notifications.length > 9 ? "9+" : notifications.length}
+                        </span>
+                      )}
+                    </button>
+                    {notifOpen && (
+                      <div className="absolute right-0 z-30 mt-2 w-80 rounded-xl border border-[#f5d3e0] bg-white p-3 shadow-xl">
+                        <div className="mb-2 flex items-center justify-between">
+                          <div className="text-sm font-semibold text-[#2B2320]">Notifications</div>
+                          {notifications.length > 0 && <button onClick={() => setNotifications([])} className="text-xs text-[#D6336C]">Clear</button>}
+                        </div>
+                        {notifications.length === 0 ? (
+                          <p className="text-xs text-[#2B2320]/50">No new activity yet — you'll see it here when staff add a sale.</p>
+                        ) : (
+                          <div className="max-h-72 space-y-2 overflow-y-auto">
+                            {notifications.map((n) => (
+                              <div key={n.id + n.time} className="rounded-lg bg-[#FFF6F8] p-2 text-xs">
+                                <div className="text-[#2B2320]/80">{n.text}</div>
+                                <div className="mt-0.5 text-[10px] text-[#2B2320]/40">{new Date(n.time).toLocaleTimeString()}</div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
-              {tab === "dashboard" && <Dashboard {...{ customers, appointments, sales, expenses, custMap, staffMap, svcMap, customerStats, setTab }} />}
-              {tab === "customers" && <CustomersTab {...{ customers, setCustomers, customerStats, staff }} />}
-              {tab === "appointments" && <AppointmentsTab {...{ appointments, setAppointments, customers, setCustomers, staff, services, custMap, staffMap, svcMap, setTab, setSales }} />}
-              {tab === "sales" && <SalesTab {...{ sales, setSales, customers, setCustomers, staff, services, custMap, staffMap, svcMap }} />}
-              {tab === "credit" && <CreditTab {...{ sales, setSales, custMap }} />}
-              {tab === "expenses" && <ExpensesTab {...{ expenses, setExpenses }} />}
-              {tab === "suppliers" && <SuppliersTab {...{ suppliers, setSuppliers, purchases, supplierPayments, setTab }} />}
-              {tab === "purchases" && <PurchasesTab {...{ purchases, setPurchases, suppliers, suppMap, supplierPayments, setSupplierPayments }} />}
-              {tab === "staff" && <StaffTab {...{ staff, setStaff, salarySlips, setSalarySlips }} />}
-              {tab === "loans" && <LoansTab {...{ loans, setLoans }} />}
-              {tab === "reports" && <ReportsTab {...{ sales, expenses, custMap, suppliers, suppMap, purchases, supplierPayments, staff, salarySlips }} />}
-              {tab === "whatsapp" && <WhatsAppTab {...{ customers, customerStats }} />}
+              {tab === "dashboard" && !isStaff && <Dashboard {...{ customers, appointments, sales, expenses, custMap, staffMap, svcMap, customerStats, setTab }} />}
+              {tab === "customers" && !isStaff && <CustomersTab {...{ customers, setCustomers, customerStats, staff }} />}
+              {tab === "appointments" && !isStaff && <AppointmentsTab {...{ appointments, setAppointments, customers, setCustomers, staff, services, custMap, staffMap, svcMap, setTab, setSales, currentUser }} />}
+              {tab === "sales" && <SalesTab {...{ sales, setSales, customers, setCustomers, staff, services, custMap, staffMap, svcMap, currentUser }} />}
+              {tab === "credit" && !isStaff && <CreditTab {...{ sales, setSales, custMap, currentUser }} />}
+              {tab === "expenses" && !isStaff && <ExpensesTab {...{ expenses, setExpenses }} />}
+              {tab === "suppliers" && !isStaff && <SuppliersTab {...{ suppliers, setSuppliers, purchases, supplierPayments, setTab }} />}
+              {tab === "purchases" && !isStaff && <PurchasesTab {...{ purchases, setPurchases, suppliers, suppMap, supplierPayments, setSupplierPayments }} />}
+              {tab === "staff" && !isStaff && <StaffTab {...{ staff, setStaff, salarySlips, setSalarySlips }} />}
+              {tab === "loans" && !isStaff && <LoansTab {...{ loans, setLoans }} />}
+              {tab === "reports" && !isStaff && <ReportsTab {...{ sales, expenses, custMap, suppliers, suppMap, purchases, supplierPayments, staff, salarySlips }} />}
+              {tab === "whatsapp" && !isStaff && <WhatsAppTab {...{ customers, customerStats }} />}
             </div>
           </main>
         </div>
@@ -446,7 +559,7 @@ function Dashboard({ customers, appointments, sales, expenses, custMap, staffMap
   const todaysAppts = appointments.filter(a => a.date === today).sort((a, b) => a.time.localeCompare(b.time));
   const monthRevenue = sales.filter(s => s.date.startsWith(monthPrefix)).reduce((sum, s) => sum + Number(s.amount), 0);
   const monthExpenses = expenses.filter(e => e.date.startsWith(monthPrefix)).reduce((sum, e) => sum + Number(e.amount), 0);
-  const outstandingCredit = sales.filter(s => !s.paid).reduce((sum, s) => sum + Number(s.amount), 0);
+  const outstandingCredit = sales.filter(s => (s.amountPaid || 0) < s.amount).reduce((sum, s) => sum + (s.amount - (s.amountPaid || 0)), 0);
 
   const regulars = customers.filter(c => (customerStats[c.id]?.visits || 0) >= 3);
   const inactive = customers.filter(c => {
@@ -616,6 +729,25 @@ function CustomersTab({ customers, setCustomers, customerStats, staff }) {
     setImportModal(null);
   }
 
+  function exportCSV() {
+    const header = ["Name", "Mobile", "Tags", "Visits", "Last Visit", "Next Appointment"];
+    const rows = customers.map((c) => {
+      const st = customerStats[c.id] || {};
+      return [
+        c.name, c.mobile, (c.tags || "").replace(/,/g, ";"),
+        st.visits || 0, st.lastVisit || "", st.nextAppt ? `${st.nextAppt.date} ${st.nextAppt.time}` : "",
+      ];
+    });
+    const csv = [header, ...rows].map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `cherrys-customers-${todayStr()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   const detail = detailId ? customers.find(c => c.id === detailId) : null;
 
   return (
@@ -625,6 +757,7 @@ function CustomersTab({ customers, setCustomers, customerStats, staff }) {
         desc={`${customers.length} total`}
         action={
           <div className="flex gap-2">
+            <Btn variant="outline" onClick={exportCSV}><AppIcon name="file" size={16} /> Export CSV</Btn>
             <Btn variant="outline" onClick={openImport}><AppIcon name="upload" size={16} /> Import Contacts</Btn>
             <Btn onClick={openAdd}><AppIcon name="add" size={16} /> Add Customer</Btn>
           </div>
@@ -796,7 +929,7 @@ function generateSlots() {
 }
 const SLOTS = generateSlots();
 
-function AppointmentsTab({ appointments, setAppointments, customers, setCustomers, staff, services, custMap, staffMap, svcMap, setTab, setSales }) {
+function AppointmentsTab({ appointments, setAppointments, customers, setCustomers, staff, services, custMap, staffMap, svcMap, setTab, setSales, currentUser }) {
   const [date, setDate] = useState(todayStr());
   const [modal, setModal] = useState(null);
 
@@ -841,7 +974,15 @@ function AppointmentsTab({ appointments, setAppointments, customers, setCustomer
 
   function convertToSale(a) {
     const svc = svcMap[a.serviceId];
-    setSales(prev => [...prev, { id: uid(), date: a.date, customerId: a.customerId, staffId: a.staffId, description: svc?.name || "Service", amount: svc?.price || 0, paymentMode: "Cash", paid: true }]);
+    const amount = svc?.price || 0;
+    setSales(prev => {
+      const invoiceNo = nextInvoiceNo(prev, a.date);
+      return [...prev, {
+        id: uid(), invoiceNo, date: a.date, customerId: a.customerId, staffId: a.staffId,
+        description: svc?.name || "Service", amount, amountPaid: amount,
+        payments: [{ date: a.date, amount, mode: "Cash" }], addedBy: currentUser?.name || "—",
+      }];
+    });
     setTab("sales");
   }
 
@@ -948,38 +1089,114 @@ function AppointmentsTab({ appointments, setAppointments, customers, setCustomer
 /* SALES                                                                */
 /* ================================================================== */
 
-function SalesTab({ sales, setSales, customers, setCustomers, staff, services, custMap, staffMap, svcMap }) {
+function CustomerPicker({ customers, value, onChange, onNewCustomer }) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const selected = customers.find((c) => c.id === value);
+
+  useEffect(() => { if (selected) setQuery(""); }, [value]);
+
+  const results = query.trim()
+    ? customers.filter((c) => c.name.toLowerCase().includes(query.toLowerCase()) || (c.mobile || "").includes(query)).slice(0, 8)
+    : [];
+
+  return (
+    <div className="relative">
+      {selected ? (
+        <div className="flex items-center justify-between rounded-lg border border-[#f5d3e0] bg-[#FFF6F8] px-3 py-2 text-sm">
+          <span><span className="font-medium">{selected.name}</span> — {selected.mobile}</span>
+          <button type="button" onClick={() => onChange("")} className="text-xs text-[#D6336C]">Change</button>
+        </div>
+      ) : (
+        <>
+          <TextInput
+            value={query}
+            onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+            onFocus={() => setOpen(true)}
+            placeholder="Search by name or mobile…"
+          />
+          {open && query.trim() && (
+            <div className="absolute z-20 mt-1 w-full rounded-lg border border-[#f5d3e0] bg-white shadow-lg">
+              {results.length === 0 ? (
+                <div className="p-3 text-sm text-[#2B2320]/50">No match — you can add them as a new customer below.</div>
+              ) : (
+                results.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => { onChange(c.id); setOpen(false); }}
+                    className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-[#FFF6F8]"
+                  >
+                    <span className="font-medium">{c.name}</span>
+                    <span className="text-[#2B2320]/50">{c.mobile}</span>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function SalesTab({ sales, setSales, customers, setCustomers, staff, services, custMap, staffMap, svcMap, currentUser }) {
   const [modal, setModal] = useState(null);
   const [filterMode, setFilterMode] = useState("All");
+  const isAdmin = !currentUser || currentUser.role === "admin";
 
   function openAdd() {
-    setModal({ date: todayStr(), customerId: customers[0]?.id || "", staffId: staff[0]?.id || "", description: services[0]?.name || "", amount: services[0]?.price || "", paymentMode: "Cash", paid: true });
+    setModal({
+      date: todayStr(), customerId: "", newCustomerName: "", newCustomerMobile: "",
+      staffId: staff[0]?.id || "", description: services[0]?.name || "", amount: services[0]?.price || "",
+      saleMode: "Cash",
+    });
   }
 
   function save(e) {
     e.preventDefault();
-    if (!modal.customerId || !modal.amount) return;
-    setSales([...sales, { id: uid(), date: modal.date, customerId: modal.customerId, staffId: modal.staffId, description: modal.description, amount: Number(modal.amount), paymentMode: modal.paymentMode, paid: modal.paid }]);
+    let customerId = modal.customerId;
+    let updatedCustomers = customers;
+    if (!customerId) {
+      if (!modal.newCustomerName || !modal.newCustomerMobile) { alert("Search for an existing customer or enter a new customer's name & mobile."); return; }
+      const nc = { id: uid(), name: modal.newCustomerName, mobile: modal.newCustomerMobile, tags: "", notes: "", createdAt: todayStr(), log: [] };
+      updatedCustomers = [...customers, nc];
+      setCustomers(updatedCustomers);
+      customerId = nc.id;
+    }
+    if (!modal.amount) return;
+    const amount = Number(modal.amount);
+    const isCredit = modal.saleMode === "Credit";
+    const invoiceNo = nextInvoiceNo(sales, modal.date);
+    const payments = isCredit ? [] : [{ date: modal.date, amount, mode: modal.saleMode }];
+    setSales([...sales, {
+      id: uid(), invoiceNo, date: modal.date, customerId, staffId: modal.staffId,
+      description: modal.description, amount, amountPaid: isCredit ? 0 : amount,
+      payments, addedBy: currentUser?.name || "—",
+    }]);
     setModal(null);
   }
 
   function del(id) { if (confirmDelete("Delete this sale record?")) setSales(sales.filter(s => s.id !== id)); }
 
-  const filtered = filterMode === "All" ? sales : sales.filter(s => s.paymentMode === filterMode);
+  const filtered = filterMode === "All" ? sales : filterMode === "Credit" ? sales.filter(s => s.amountPaid < s.amount) : sales.filter(s => (s.payments || []).some(p => p.mode === filterMode));
   const sorted = [...filtered].sort((a, b) => b.date.localeCompare(a.date));
   const total = filtered.reduce((sum, s) => sum + Number(s.amount), 0);
-  const byMode = PAYMENT_MODES.map(m => ({ mode: m, total: sales.filter(s => s.paymentMode === m).reduce((sum, s) => sum + Number(s.amount), 0) }));
+  const byMode = PAYMENT_MODES.map(m => ({
+    mode: m,
+    total: sales.reduce((sum, s) => sum + (s.payments || []).filter(p => p.mode === m).reduce((ps, p) => ps + Number(p.amount), 0), 0),
+  }));
 
   return (
     <div>
-      <SectionHeader title="Sales & Payments" desc="Every service sold and how it was paid" action={<Btn onClick={openAdd}><AppIcon name="add" size={16} /> Record Sale</Btn>} />
+      <SectionHeader title="Sales & Payments" desc="Every service sold, who added it, and how it was paid" action={<Btn onClick={openAdd}><AppIcon name="add" size={16} /> Record Sale</Btn>} />
 
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {byMode.map(b => <StatCard key={b.mode} label={b.mode} value={fmtMoney(b.total)} icon="wallet" tone="rose" />)}
       </div>
 
       <div className="mb-3 flex flex-wrap gap-2">
-        {["All", ...PAYMENT_MODES].map(m => (
+        {["All", ...SALE_MODES].map(m => (
           <button key={m} onClick={() => setFilterMode(m)} className={`rounded-full px-3 py-1 text-xs font-medium ${filterMode === m ? "bg-[#D6336C] text-white" : "bg-white text-[#2B2320]/60 border border-[#f5d3e0]"}`}>{m}</button>
         ))}
       </div>
@@ -990,23 +1207,28 @@ function SalesTab({ sales, setSales, customers, setCustomers, staff, services, c
         <div className="cbl-card overflow-x-auto rounded-2xl bg-white shadow-sm">
           <table className="w-full">
             <thead className="border-b border-[#fbe8ef]"><tr>
-              <Th>Date</Th><Th>Customer</Th><Th>Service</Th><Th>Staff</Th><Th>Amount</Th><Th>Payment</Th><Th>Status</Th><Th></Th>
+              <Th>Invoice #</Th><Th>Date</Th><Th>Customer</Th><Th>Service</Th><Th>Staff</Th><Th>Amount</Th><Th>Status</Th><Th>Added By</Th><Th></Th>
             </tr></thead>
             <tbody className="divide-y divide-[#fbe8ef]">
-              {sorted.map(s => (
-                <tr key={s.id} className="hover:bg-[#FFF6F8]">
-                  <Td>{fmtDate(s.date)}</Td>
-                  <Td className="font-medium">{custMap[s.customerId]?.name || "—"}</Td>
-                  <Td>{s.description}</Td>
-                  <Td>{staffMap[s.staffId]?.name || "—"}</Td>
-                  <Td>{fmtMoney(s.amount)}</Td>
-                  <Td><Pill tone="gray">{s.paymentMode}</Pill></Td>
-                  <Td><Pill tone={s.paid ? "green" : "amber"}>{s.paid ? "Paid" : "Credit"}</Pill></Td>
-                  <Td><button onClick={() => del(s.id)} className="rounded p-1.5 text-[#B23A3A] hover:bg-[#B23A3A]/10"><AppIcon name="delete" size={14} /></button></Td>
-                </tr>
-              ))}
+              {sorted.map(s => {
+                const balance = s.amount - (s.amountPaid || 0);
+                const status = balance <= 0 ? "Paid" : (s.amountPaid || 0) > 0 ? "Partial" : "Credit";
+                return (
+                  <tr key={s.id} className="hover:bg-[#FFF6F8]">
+                    <Td className="font-mono text-xs">{s.invoiceNo || "—"}</Td>
+                    <Td>{fmtDate(s.date)}</Td>
+                    <Td className="font-medium">{custMap[s.customerId]?.name || "—"}</Td>
+                    <Td>{s.description}</Td>
+                    <Td>{staffMap[s.staffId]?.name || "—"}</Td>
+                    <Td>{fmtMoney(s.amount)}</Td>
+                    <Td><Pill tone={status === "Paid" ? "green" : status === "Partial" ? "amber" : "red"}>{status}</Pill></Td>
+                    <Td>{s.addedBy || "—"}</Td>
+                    <Td>{isAdmin && <button onClick={() => del(s.id)} className="rounded p-1.5 text-[#B23A3A] hover:bg-[#B23A3A]/10"><AppIcon name="delete" size={14} /></button>}</Td>
+                  </tr>
+                );
+              })}
             </tbody>
-            <tfoot><tr className="border-t border-[#fbe8ef] font-semibold"><Td colSpan={4}>Total</Td><Td>{fmtMoney(total)}</Td><Td /><Td /><Td /></tr></tfoot>
+            <tfoot><tr className="border-t border-[#fbe8ef] font-semibold"><Td colSpan={5}>Total</Td><Td>{fmtMoney(total)}</Td><Td /><Td /><Td /></tr></tfoot>
           </table>
         </div>
       )}
@@ -1016,11 +1238,14 @@ function SalesTab({ sales, setSales, customers, setCustomers, staff, services, c
           <form onSubmit={save}>
             <Field label="Date" required><TextInput type="date" value={modal.date} onChange={e => setModal({ ...modal, date: e.target.value })} required /></Field>
             <Field label="Customer" required>
-              <Select value={modal.customerId} onChange={e => setModal({ ...modal, customerId: e.target.value })} required>
-                <option value="">Select customer</option>
-                {customers.map(c => <option key={c.id} value={c.id}>{c.name} ({c.mobile})</option>)}
-              </Select>
+              <CustomerPicker customers={customers} value={modal.customerId} onChange={(id) => setModal({ ...modal, customerId: id })} />
             </Field>
+            {!modal.customerId && (
+              <div className="mb-3 grid grid-cols-2 gap-3 rounded-lg bg-[#FFF6F8] p-3">
+                <Field label="New Customer Name"><TextInput value={modal.newCustomerName} onChange={e => setModal({ ...modal, newCustomerName: e.target.value })} /></Field>
+                <Field label="New Customer Mobile"><TextInput value={modal.newCustomerMobile} onChange={e => setModal({ ...modal, newCustomerMobile: e.target.value })} /></Field>
+              </div>
+            )}
             <Field label="Staff">
               <Select value={modal.staffId} onChange={e => setModal({ ...modal, staffId: e.target.value })}>
                 <option value="">—</option>
@@ -1030,16 +1255,15 @@ function SalesTab({ sales, setSales, customers, setCustomers, staff, services, c
             <Field label="Service / Description" required><TextInput value={modal.description} onChange={e => setModal({ ...modal, description: e.target.value })} required /></Field>
             <Field label="Amount (BHD)" required><TextInput type="number" step="0.001" value={modal.amount} onChange={e => setModal({ ...modal, amount: e.target.value })} required /></Field>
             <Field label="Payment Mode" required>
-              <Select value={modal.paymentMode} onChange={e => setModal({ ...modal, paymentMode: e.target.value })}>
-                {PAYMENT_MODES.map(m => <option key={m} value={m}>{m}</option>)}
+              <Select value={modal.saleMode} onChange={e => setModal({ ...modal, saleMode: e.target.value })}>
+                {SALE_MODES.map(m => <option key={m} value={m}>{m}</option>)}
               </Select>
             </Field>
-            <Field label="">
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={modal.paid} onChange={e => setModal({ ...modal, paid: e.target.checked })} />
-                Paid in full now (uncheck to record as credit / unpaid)
-              </label>
-            </Field>
+            {modal.saleMode === "Credit" && (
+              <div className="mb-3 rounded-lg bg-[#C97B2E]/10 px-3 py-2 text-xs text-[#C97B2E]">
+                This records the sale as unpaid. It'll show under Credit (Unpaid) — settle it there whenever the customer pays, in full or in installments.
+              </div>
+            )}
             <Btn type="submit" className="w-full justify-center">Save Sale</Btn>
           </form>
         </Modal>
@@ -1052,43 +1276,103 @@ function SalesTab({ sales, setSales, customers, setCustomers, staff, services, c
 /* CREDIT                                                               */
 /* ================================================================== */
 
-function CreditTab({ sales, setSales, custMap }) {
-  const unpaid = sales.filter(s => !s.paid).sort((a, b) => a.date.localeCompare(b.date));
-  const total = unpaid.reduce((sum, s) => sum + Number(s.amount), 0);
+function CreditTab({ sales, setSales, custMap, currentUser }) {
+  const [payModal, setPayModal] = useState(null);
+  const [historyId, setHistoryId] = useState(null);
+  const unpaid = sales.filter(s => (s.amountPaid || 0) < s.amount).sort((a, b) => a.date.localeCompare(b.date));
+  const total = unpaid.reduce((sum, s) => sum + (s.amount - (s.amountPaid || 0)), 0);
 
-  function markPaid(s, mode) {
-    setSales(sales.map(x => x.id === s.id ? { ...x, paid: true, paymentMode: mode } : x));
+  function openPay(s) {
+    setPayModal({ saleId: s.id, date: todayStr(), amount: (s.amount - (s.amountPaid || 0)).toFixed(3), mode: "Cash" });
   }
+
+  function savePayment(e) {
+    e.preventDefault();
+    const amt = Number(payModal.amount);
+    if (!amt || amt <= 0) return;
+    setSales(sales.map((s) => {
+      if (s.id !== payModal.saleId) return s;
+      const payments = [...(s.payments || []), { date: payModal.date, amount: amt, mode: payModal.mode, recordedBy: currentUser?.name }];
+      const amountPaid = Math.min(s.amount, (s.amountPaid || 0) + amt);
+      return { ...s, payments, amountPaid };
+    }));
+    setPayModal(null);
+  }
+
+  const historySale = historyId ? sales.find((s) => s.id === historyId) : null;
 
   return (
     <div>
-      <SectionHeader title="Credit (Unpaid) Record" desc={`Outstanding: ${fmtMoney(total)} across ${unpaid.length} customer(s)`} />
+      <SectionHeader title="Credit (Unpaid) Record" desc={`Outstanding: ${fmtMoney(total)} across ${unpaid.length} invoice(s)`} />
       {unpaid.length === 0 ? (
         <Empty icon="credit" text="No outstanding credit. Everyone's paid up!" />
       ) : (
         <div className="cbl-card overflow-x-auto rounded-2xl bg-white shadow-sm">
           <table className="w-full">
-            <thead className="border-b border-[#fbe8ef]"><tr><Th>Date</Th><Th>Customer</Th><Th>Mobile</Th><Th>Service</Th><Th>Amount</Th><Th>Days Outstanding</Th><Th></Th></tr></thead>
+            <thead className="border-b border-[#fbe8ef]"><tr><Th>Invoice #</Th><Th>Date</Th><Th>Customer</Th><Th>Mobile</Th><Th>Total</Th><Th>Paid</Th><Th>Balance</Th><Th>Status</Th><Th>Days</Th><Th></Th></tr></thead>
             <tbody className="divide-y divide-[#fbe8ef]">
-              {unpaid.map(s => (
-                <tr key={s.id} className="hover:bg-[#FFF6F8]">
-                  <Td>{fmtDate(s.date)}</Td>
-                  <Td className="font-medium">{custMap[s.customerId]?.name}</Td>
-                  <Td>{custMap[s.customerId]?.mobile}</Td>
-                  <Td>{s.description}</Td>
-                  <Td>{fmtMoney(s.amount)}</Td>
-                  <Td><Pill tone={daysBetween(s.date, todayStr()) > 14 ? "red" : "amber"}>{daysBetween(s.date, todayStr())} days</Pill></Td>
-                  <Td>
-                    <Select onChange={e => { if (e.target.value) markPaid(s, e.target.value); }} defaultValue="">
-                      <option value="" disabled>Mark paid via…</option>
-                      {PAYMENT_MODES.map(m => <option key={m} value={m}>{m}</option>)}
-                    </Select>
-                  </Td>
-                </tr>
-              ))}
+              {unpaid.map(s => {
+                const paid = s.amountPaid || 0;
+                const balance = s.amount - paid;
+                const status = paid > 0 ? "Partial" : "Unpaid";
+                return (
+                  <tr key={s.id} className="hover:bg-[#FFF6F8]">
+                    <Td className="font-mono text-xs">{s.invoiceNo || "—"}</Td>
+                    <Td>{fmtDate(s.date)}</Td>
+                    <Td className="font-medium">{custMap[s.customerId]?.name}</Td>
+                    <Td>{custMap[s.customerId]?.mobile}</Td>
+                    <Td>{fmtMoney(s.amount)}</Td>
+                    <Td>{fmtMoney(paid)}</Td>
+                    <Td className="font-semibold">{fmtMoney(balance)}</Td>
+                    <Td><Pill tone={status === "Partial" ? "amber" : "red"}>{status}</Pill></Td>
+                    <Td><Pill tone={daysBetween(s.date, todayStr()) > 14 ? "red" : "amber"}>{daysBetween(s.date, todayStr())}d</Pill></Td>
+                    <Td>
+                      <div className="flex gap-1">
+                        <Btn size="sm" onClick={() => openPay(s)}>Record Payment</Btn>
+                        {(s.payments || []).length > 0 && (
+                          <button onClick={() => setHistoryId(s.id)} className="rounded p-1.5 text-[#2B2320]/50 hover:bg-black/5" title="Payment history"><AppIcon name="clock" size={14} /></button>
+                        )}
+                      </div>
+                    </Td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
+      )}
+
+      {payModal && (
+        <Modal title="Record Payment" onClose={() => setPayModal(null)}>
+          <form onSubmit={savePayment}>
+            <Field label="Date" required><TextInput type="date" value={payModal.date} onChange={e => setPayModal({ ...payModal, date: e.target.value })} required /></Field>
+            <Field label="Amount Received (BHD)" required><TextInput type="number" step="0.001" value={payModal.amount} onChange={e => setPayModal({ ...payModal, amount: e.target.value })} required /></Field>
+            <p className="mb-3 text-xs text-[#2B2320]/50">You can enter less than the full balance to record a partial / installment payment — the remaining balance stays on Credit.</p>
+            <Field label="Payment Mode" required>
+              <Select value={payModal.mode} onChange={e => setPayModal({ ...payModal, mode: e.target.value })}>
+                {PAYMENT_MODES.map(m => <option key={m} value={m}>{m}</option>)}
+              </Select>
+            </Field>
+            <Btn type="submit" className="w-full justify-center">Save Payment</Btn>
+          </form>
+        </Modal>
+      )}
+
+      {historySale && (
+        <Modal title={`Payment History — ${historySale.invoiceNo || ""}`} onClose={() => setHistoryId(null)}>
+          <div className="mb-3 text-sm text-[#2B2320]/60">
+            {custMap[historySale.customerId]?.name} · Total {fmtMoney(historySale.amount)} · Paid {fmtMoney(historySale.amountPaid || 0)}
+          </div>
+          <div className="space-y-2">
+            {(historySale.payments || []).map((p, i) => (
+              <div key={i} className="flex items-center justify-between rounded-lg bg-[#FFF6F8] px-3 py-2 text-sm">
+                <span>{fmtDate(p.date)} — {p.mode}{p.recordedBy ? ` (by ${p.recordedBy})` : ""}</span>
+                <span className="font-medium">{fmtMoney(p.amount)}</span>
+              </div>
+            ))}
+            {(historySale.payments || []).length === 0 && <p className="text-sm text-[#2B2320]/40">No payments recorded yet.</p>}
+          </div>
+        </Modal>
       )}
     </div>
   );
@@ -1589,34 +1873,48 @@ function LoansTab({ loans, setLoans }) {
 
 function ReportsTab({ sales, expenses, custMap, suppliers, suppMap, purchases, supplierPayments, staff, salarySlips }) {
   const now = new Date();
-  const [type, setType] = useState("sales");
+  const [type, setType] = useState("dailyInvoice");
   const [month, setMonth] = useState(now.getMonth());
   const [year, setYear] = useState(now.getFullYear());
+  const [day, setDay] = useState(todayStr());
   const prefix = `${year}-${String(month + 1).padStart(2, "0")}`;
 
   const reportRows = useMemo(() => {
+    if (type === "dailyInvoice") return sales.filter(s => s.date === day);
     if (type === "sales") return sales.filter(s => s.date.startsWith(prefix)).sort((a, b) => a.date.localeCompare(b.date));
     if (type === "expenses") return expenses.filter(e => e.date.startsWith(prefix)).sort((a, b) => a.date.localeCompare(b.date));
-    if (type === "credit") return sales.filter(s => !s.paid);
+    if (type === "credit") return sales.filter(s => (s.amountPaid || 0) < s.amount);
     if (type === "supplierPayments") return supplierPayments.filter(p => p.date.startsWith(prefix)).sort((a, b) => a.date.localeCompare(b.date));
     return [];
-  }, [type, prefix, sales, expenses, supplierPayments]);
+  }, [type, prefix, day, sales, expenses, supplierPayments]);
 
   const total = reportRows.reduce((s, r) => s + Number(r.amount), 0);
-  const titles = { sales: "Monthly Sales Report", expenses: "Monthly Expense Report", credit: "Credit (Non-Paid) Report", supplierPayments: "Supplier Payments Report" };
+  const titles = {
+    dailyInvoice: "Daily Sales Report", sales: "Monthly Sales Report", expenses: "Monthly Expense Report",
+    credit: "Credit (Non-Paid) Report", supplierPayments: "Supplier Payments Report",
+  };
+
+  const modeTotals = type === "dailyInvoice"
+    ? PAYMENT_MODES.reduce((acc, m) => {
+        acc[m] = reportRows.reduce((sum, s) => sum + (s.payments || []).filter(p => p.mode === m && p.date === day).reduce((ps, p) => ps + Number(p.amount), 0), 0);
+        return acc;
+      }, {})
+    : {};
 
   return (
     <div>
-      <SectionHeader title="Reports" desc="Generate and print monthly business reports" />
+      <SectionHeader title="Reports" desc="Generate and print business reports, including your daily sales invoice" />
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <Select value={type} onChange={e => setType(e.target.value)} className="w-auto">
+          <option value="dailyInvoice">Daily Sales Report (invoice style)</option>
           <option value="sales">Monthly Sales Report</option>
           <option value="expenses">Monthly Expense Report</option>
           <option value="credit">Credit (Non-Paid) Report</option>
           <option value="supplierPayments">Supplier Payments Report</option>
         </Select>
-        {type !== "credit" && <>
+        {type === "dailyInvoice" && <TextInput type="date" value={day} onChange={e => setDay(e.target.value)} className="w-auto" />}
+        {type !== "credit" && type !== "dailyInvoice" && <>
           <Select value={month} onChange={e => setMonth(Number(e.target.value))} className="w-auto">
             {Array.from({ length: 12 }).map((_, i) => <option key={i} value={i}>{new Date(2000, i, 1).toLocaleDateString("en-GB", { month: "long" })}</option>)}
           </Select>
@@ -1625,39 +1923,108 @@ function ReportsTab({ sales, expenses, custMap, suppliers, suppMap, purchases, s
         <Btn onClick={() => window.print()}><AppIcon name="printer" size={16} /> Print</Btn>
       </div>
 
-      <div id="report-print" className="cbl-card rounded-2xl bg-white p-6 shadow-sm">
-        <div className="mb-4 text-center">
-          <div className="cbl-heading text-xl text-[#D6336C]">Cherrys Beauty Lounge</div>
-          <div className="text-sm text-[#2B2320]/60">{titles[type]}{type !== "credit" && ` — ${monthLabel(month, year)}`}</div>
-        </div>
-
-        {reportRows.length === 0 ? <Empty icon="file" text="No records for this period." /> : (
-          <table className="w-full text-sm">
-            <thead className="border-b border-[#fbe8ef]"><tr>
-              <Th>Date</Th>
-              {type === "sales" && <><Th>Customer</Th><Th>Service</Th><Th>Payment</Th></>}
-              {type === "expenses" && <Th>Category</Th>}
-              {type === "credit" && <><Th>Customer</Th><Th>Service</Th></>}
-              {type === "supplierPayments" && <Th>Supplier</Th>}
-              <Th>Amount</Th>
-            </tr></thead>
-            <tbody className="divide-y divide-[#fbe8ef]">
-              {reportRows.map(r => (
-                <tr key={r.id}>
-                  <Td>{fmtDate(r.date)}</Td>
-                  {type === "sales" && <><Td>{custMap[r.customerId]?.name}</Td><Td>{r.description}</Td><Td>{r.paymentMode}</Td></>}
-                  {type === "expenses" && <Td>{r.category}</Td>}
-                  {type === "credit" && <><Td>{custMap[r.customerId]?.name}</Td><Td>{r.description}</Td></>}
-                  {type === "supplierPayments" && <Td>{suppMap[r.supplierId]?.name}</Td>}
-                  <Td>{fmtMoney(r.amount)}</Td>
+      {type === "dailyInvoice" ? (
+        <div id="report-print" className="cbl-card overflow-hidden rounded-2xl bg-white shadow-sm">
+          <div className="flex items-start justify-between border-b-2 border-[#2B2320] p-5">
+            <img src="./assets/logo-dark-text.png" alt="Cherrys Beauty Lounge" className="h-14 w-auto object-contain" />
+            <div className="rounded bg-[#2B2320] px-3 py-1.5 text-right text-sm font-medium text-white" dir="rtl">{BUSINESS.nameArabic}</div>
+          </div>
+          <div className="p-5">
+            <div className="mb-4 text-center text-lg font-bold tracking-wide text-[#2B2320]">DAILY SALES REPORT</div>
+            <div className="mb-3 flex justify-between text-sm">
+              <div><span className="font-semibold">NO.</span> {nextInvoiceNo(sales, day)}</div>
+              <div><span className="font-semibold">DATE:</span> {fmtDate(day)}</div>
+            </div>
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="bg-[#2B2320] text-white">
+                  <th className="border border-[#2B2320] px-2 py-1.5 text-left">SL NO</th>
+                  <th className="border border-[#2B2320] px-2 py-1.5 text-left">DESCRIPTION</th>
+                  <th className="border border-[#2B2320] px-2 py-1.5 text-right">TOTAL</th>
                 </tr>
-              ))}
-            </tbody>
-            <tfoot><tr className="border-t-2 border-[#2B2320]/20 font-semibold"><Td colSpan={type === "sales" ? 4 : type === "credit" ? 3 : 2}>Total</Td><Td>{fmtMoney(total)}</Td></tr></tfoot>
-          </table>
-        )}
-        <div className="mt-6 text-center text-xs text-[#2B2320]/40">Printed on {fmtDate(todayStr())}</div>
-      </div>
+              </thead>
+              <tbody>
+                {reportRows.length === 0 ? (
+                  <tr><td colSpan={3} className="border border-[#2B2320] px-2 py-6 text-center text-[#2B2320]/40">No sales recorded for this date.</td></tr>
+                ) : reportRows.map((r, i) => (
+                  <tr key={r.id}>
+                    <td className="border border-[#2B2320] px-2 py-1.5">{i + 1}</td>
+                    <td className="border border-[#2B2320] px-2 py-1.5">{custMap[r.customerId]?.name || "—"} — {r.description}</td>
+                    <td className="border border-[#2B2320] px-2 py-1.5 text-right">{fmtMoney(r.amount)}</td>
+                  </tr>
+                ))}
+                {Array.from({ length: Math.max(0, 6 - reportRows.length) }).map((_, i) => (
+                  <tr key={"blank" + i}>
+                    <td className="border border-[#2B2320] px-2 py-3">&nbsp;</td>
+                    <td className="border border-[#2B2320] px-2 py-3">&nbsp;</td>
+                    <td className="border border-[#2B2320] px-2 py-3">&nbsp;</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="mt-1 flex items-stretch border border-t-0 border-[#2B2320] text-sm">
+              <div className="flex-1 border-r border-[#2B2320] p-2">In Words: {numberToWordsBHD(total)}</div>
+              <div className="w-40 p-2 text-right font-semibold">G_Total: {fmtMoney(total)}</div>
+            </div>
+
+            <div className="mt-5 flex items-end justify-between text-sm">
+              <div>
+                <div className="mb-2 font-semibold">Payment Method:</div>
+                {PAYMENT_MODES.map((m) => (
+                  <div key={m} className="mb-1.5 flex items-center gap-2">
+                    <span className="w-28">{m}</span>
+                    <span className="flex-1 border-b border-[#2B2320]/60"></span>
+                    <span className="w-20 text-right">{fmtMoney(modeTotals[m] || 0)}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="text-right">
+                <div className="mb-8 text-xs text-[#2B2320]/50">Total: {fmtMoney(total)}</div>
+                <div className="border-t border-[#2B2320] pt-1 text-xs">Cherrys Beauty Lounge</div>
+              </div>
+            </div>
+          </div>
+          <div className="bg-[#2B2320] px-5 py-3 text-center text-[10px] text-white/80">
+            {BUSINESS.cr} &nbsp;·&nbsp; Mobile {BUSINESS.phone} &nbsp;·&nbsp; {BUSINESS.email} &nbsp;·&nbsp; {BUSINESS.address}
+          </div>
+        </div>
+      ) : (
+        <div id="report-print" className="cbl-card rounded-2xl bg-white p-6 shadow-sm">
+          <div className="mb-4 text-center">
+            <img src="./assets/logo-dark-text.png" alt="Cherrys Beauty Lounge" className="mx-auto mb-2 h-10 w-auto object-contain" />
+            <div className="text-sm text-[#2B2320]/60">{titles[type]}{type !== "credit" && ` — ${monthLabel(month, year)}`}</div>
+          </div>
+
+          {reportRows.length === 0 ? <Empty icon="file" text="No records for this period." /> : (
+            <table className="w-full text-sm">
+              <thead className="border-b border-[#fbe8ef]"><tr>
+                {(type === "sales" || type === "credit") && <Th>Invoice #</Th>}
+                <Th>Date</Th>
+                {type === "sales" && <><Th>Customer</Th><Th>Service</Th><Th>Added By</Th></>}
+                {type === "expenses" && <Th>Category</Th>}
+                {type === "credit" && <><Th>Customer</Th><Th>Balance Due</Th></>}
+                {type === "supplierPayments" && <Th>Supplier</Th>}
+                <Th>Amount</Th>
+              </tr></thead>
+              <tbody className="divide-y divide-[#fbe8ef]">
+                {reportRows.map(r => (
+                  <tr key={r.id}>
+                    {(type === "sales" || type === "credit") && <Td className="font-mono text-xs">{r.invoiceNo || "—"}</Td>}
+                    <Td>{fmtDate(r.date)}</Td>
+                    {type === "sales" && <><Td>{custMap[r.customerId]?.name}</Td><Td>{r.description}</Td><Td>{r.addedBy || "—"}</Td></>}
+                    {type === "expenses" && <Td>{r.category}</Td>}
+                    {type === "credit" && <><Td>{custMap[r.customerId]?.name}</Td><Td>{fmtMoney(r.amount - (r.amountPaid || 0))}</Td></>}
+                    {type === "supplierPayments" && <Td>{suppMap[r.supplierId]?.name}</Td>}
+                    <Td>{fmtMoney(r.amount)}</Td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot><tr className="border-t-2 border-[#2B2320]/20 font-semibold"><Td colSpan={type === "sales" ? 5 : type === "credit" ? 4 : type === "expenses" ? 2 : 2}>Total</Td><Td>{fmtMoney(total)}</Td></tr></tfoot>
+            </table>
+          )}
+          <div className="mt-6 text-center text-xs text-[#2B2320]/40">Printed on {fmtDate(todayStr())}</div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1726,51 +2093,69 @@ function WhatsAppTab({ customers, customerStats }) {
 }
 
 /* ================================================================== */
-/* PIN GATE                                                            */
-/* A lightweight, client-side lock so the app isn't wide open to       */
-/* anyone who finds the URL. This is NOT strong security — the data    */
-/* itself is protected only by your Supabase anon key + RLS policy.    */
-/* For real access control, add Supabase Auth later.                   */
+/* LOGIN                                                                */
+/* Each staff member has their own username + PIN. This is a light,    */
+/* client-side lock — the data itself is protected by your Supabase    */
+/* anon key + RLS policy. For real per-user security later, this can   */
+/* be upgraded to Supabase Auth.                                       */
 /* ================================================================== */
 
-function PinGate({ children }) {
-  const [unlocked, setUnlocked] = useState(() => {
-    try { return sessionStorage.getItem("cbl_unlocked") === "yes"; } catch (e) { return false; }
-  });
+function LoginScreen({ onLogin }) {
+  const [username, setUsername] = useState("");
   const [pin, setPin] = useState("");
   const [err, setErr] = useState(false);
 
-  if (!APP_PIN) return children; // no PIN configured, skip the gate entirely
-  if (unlocked) return children;
-
   function submit(e) {
     e.preventDefault();
-    if (pin === APP_PIN) {
-      try { sessionStorage.setItem("cbl_unlocked", "yes"); } catch (e2) {}
-      setUnlocked(true);
+    const match = STAFF_USERS.find(
+      (u) => u.username.toLowerCase() === username.trim().toLowerCase() && u.pin === pin
+    );
+    if (match) {
+      try { sessionStorage.setItem("cbl_user", JSON.stringify(match)); } catch (e2) {}
+      onLogin(match);
     } else {
       setErr(true);
     }
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-[#E0447C] via-[#B0225F] to-[#5C1140] px-4">
-      <form onSubmit={submit} className="w-full max-w-xs rounded-2xl bg-white p-6 text-center shadow-xl">
-        <div className="mb-3 text-3xl">✨</div>
-        <h1 className="cbl-heading mb-1 text-lg text-[#2B2320]">{APP_NAME}</h1>
-        <p className="mb-4 text-xs text-[#2B2320]/50">Enter the shop PIN to continue</p>
-        <input
-          type="password"
-          inputMode="numeric"
-          autoFocus
-          value={pin}
-          onChange={(e) => { setPin(e.target.value); setErr(false); }}
-          className="mb-2 w-full rounded-lg border border-[#f5d3e0] bg-[#FFF6F8] px-3 py-2 text-center text-lg tracking-widest outline-none focus:border-[#D6336C]"
-        />
-        {err && <p className="mb-2 text-xs text-[#B23A3A]">Incorrect PIN, try again.</p>}
-        <button type="submit" className="w-full rounded-lg py-2 text-sm font-medium text-white" style={{ background: "linear-gradient(135deg,#D6336C,#A61E5C)" }}>
-          Unlock
+    <div
+      className="flex min-h-screen items-center justify-center px-4"
+      style={{ background: "radial-gradient(1200px 700px at 15% 10%, #F0678F 0%, transparent 55%), radial-gradient(1000px 700px at 90% 90%, #7A1B4A 0%, transparent 55%), linear-gradient(160deg,#E0447C 0%,#B0225F 45%,#4A0E29 100%)" }}
+    >
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;500;600;700&display=swap');`}</style>
+      <form onSubmit={submit} className="relative w-full max-w-sm rounded-[28px] bg-white/95 p-8 text-center shadow-2xl backdrop-blur">
+        <div className="pointer-events-none absolute inset-3 rounded-[20px] border border-[#E8C888]/50"></div>
+        <img src="./assets/logo-dark-text.png" alt={APP_NAME} className="mx-auto mb-5 h-12 w-auto object-contain" />
+        <div className="mx-auto mb-5 h-px w-16 bg-gradient-to-r from-transparent via-[#D6336C] to-transparent"></div>
+        <p className="mb-6 text-xs uppercase tracking-[0.2em] text-[#2B2320]/40" style={{ fontFamily: "'Playfair Display', serif" }}>Staff Sign In</p>
+
+        <div className="mb-3 text-left">
+          <label className="mb-1 block text-xs font-medium text-[#2B2320]/60">Username</label>
+          <input
+            value={username}
+            onChange={(e) => { setUsername(e.target.value); setErr(false); }}
+            autoFocus
+            autoCapitalize="none"
+            className="w-full rounded-lg border border-[#f5d3e0] bg-[#FFF6F8] px-3 py-2.5 text-sm outline-none focus:border-[#D6336C]"
+            placeholder="e.g. staff1"
+          />
+        </div>
+        <div className="mb-5 text-left">
+          <label className="mb-1 block text-xs font-medium text-[#2B2320]/60">PIN</label>
+          <input
+            type="password"
+            inputMode="numeric"
+            value={pin}
+            onChange={(e) => { setPin(e.target.value); setErr(false); }}
+            className="w-full rounded-lg border border-[#f5d3e0] bg-[#FFF6F8] px-3 py-2.5 text-center text-lg tracking-[0.4em] outline-none focus:border-[#D6336C]"
+          />
+        </div>
+        {err && <p className="mb-3 text-xs text-[#B23A3A]">Username or PIN not recognized.</p>}
+        <button type="submit" className="w-full rounded-lg py-2.5 text-sm font-medium text-white shadow-md" style={{ background: "linear-gradient(135deg,#D6336C,#A61E5C)" }}>
+          Sign In
         </button>
+        <p className="mt-5 text-[10px] text-[#2B2320]/30">Cherrys Beauty Lounge · Internal Team Access</p>
       </form>
     </div>
   );
@@ -1785,11 +2170,20 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 });
 
 function Root() {
-  return (
-    <PinGate>
-      <App supabase={supabase} />
-    </PinGate>
-  );
+  const [user, setUser] = useState(() => {
+    try {
+      const raw = sessionStorage.getItem("cbl_user");
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) { return null; }
+  });
+
+  function logout() {
+    try { sessionStorage.removeItem("cbl_user"); } catch (e) {}
+    setUser(null);
+  }
+
+  if (!user) return <LoginScreen onLogin={setUser} />;
+  return <App supabase={supabase} currentUser={user} onLogout={logout} />;
 }
 
 const rootEl = document.getElementById("root");
