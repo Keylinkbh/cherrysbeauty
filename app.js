@@ -1497,9 +1497,12 @@ function SalesTab({ sales, setSales, customers, setCustomers, staff, services, c
   function del(id) { if (confirmDelete("Delete this sale record?")) setSales(sales.filter(s => s.id !== id)); }
 
   function openEdit(s) {
+    const payments = s.payments || [];
+    const simpleMode = payments.length === 1 ? payments[0].mode : payments.length === 0 ? "Credit" : null;
     setEditModal({
       id: s.id, date: s.date, customerId: s.customerId, staffId: s.staffId,
       description: s.description, amount: s.amount,
+      saleMode: simpleMode, hasMixedPayments: simpleMode === null,
     });
   }
 
@@ -1509,15 +1512,22 @@ function SalesTab({ sales, setSales, customers, setCustomers, staff, services, c
     if (!editModal.customerId || !amount) return;
     setSales(sales.map((s) => {
       if (s.id !== editModal.id) return s;
-      const wasFullyPaid = (s.amountPaid || 0) >= s.amount;
       let payments = s.payments || [];
       let amountPaid = s.amountPaid || 0;
-      if (wasFullyPaid) {
-        amountPaid = amount;
-        if (payments.length === 1) payments = [{ ...payments[0], amount }];
+
+      if (!editModal.hasMixedPayments) {
+        if (editModal.saleMode === "Credit") {
+          payments = [];
+          amountPaid = 0;
+        } else {
+          payments = [{ date: editModal.date, amount, mode: editModal.saleMode }];
+          amountPaid = amount;
+        }
       } else {
+        // Multiple payments already recorded — keep history intact, just cap paid amount to the new total.
         amountPaid = Math.min(amountPaid, amount);
       }
+
       return { ...s, date: editModal.date, customerId: editModal.customerId, staffId: editModal.staffId, description: editModal.description, amount, amountPaid, payments };
     }));
     setEditModal(null);
@@ -1635,9 +1645,30 @@ function SalesTab({ sales, setSales, customers, setCustomers, staff, services, c
             </Field>
             <Field label="Service / Description" required><TextInput value={editModal.description} onChange={e => setEditModal({ ...editModal, description: e.target.value })} required /></Field>
             <Field label="Amount (BHD)" required><TextInput type="number" step="0.001" value={editModal.amount} onChange={e => setEditModal({ ...editModal, amount: e.target.value })} required /></Field>
-            <div className="mb-3 rounded-lg bg-[#C9A15A]/10 px-3 py-2 text-xs text-[#8a6a2f]">
-              Payment mode and payment history aren't changed here — manage those from the Credit tab if this sale still has a balance due.
-            </div>
+
+            {editModal.hasMixedPayments ? (
+              <div className="mb-3 rounded-lg bg-[#C9A15A]/10 px-3 py-2 text-xs text-[#8a6a2f]">
+                This sale has multiple payments recorded (installments) — payment mode can't be edited here to avoid disturbing that history. Manage individual payments from the Credit tab.
+              </div>
+            ) : (
+              <>
+                <Field label="Payment Mode" required>
+                  <Select value={editModal.saleMode} onChange={e => setEditModal({ ...editModal, saleMode: e.target.value })}>
+                    {SALE_MODES.map(m => <option key={m} value={m}>{m}</option>)}
+                  </Select>
+                </Field>
+                {editModal.saleMode === "Credit" ? (
+                  <div className="mb-3 rounded-lg bg-[#C97B2E]/10 px-3 py-2 text-xs text-[#C97B2E]">
+                    Switching to Credit clears any recorded payment and marks this sale fully unpaid — it'll show under Credit (Unpaid).
+                  </div>
+                ) : (
+                  <div className="mb-3 rounded-lg bg-[#4E7C59]/10 px-3 py-2 text-xs text-[#4E7C59]">
+                    This will mark the sale as fully paid via {editModal.saleMode}.
+                  </div>
+                )}
+              </>
+            )}
+
             <Btn type="submit" className="w-full justify-center">Save Changes</Btn>
           </form>
         </Modal>
