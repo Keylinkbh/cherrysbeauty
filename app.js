@@ -182,7 +182,7 @@ const ICONS = {
   handcoins: "🤝", printer: "🖨️", whatsapp: "💬", add: "➕", edit: "✏️",
   delete: "🗑️", close: "✖️", search: "🔍", phone: "📞", check: "✅",
   cancel: "❌", clock: "⏰", up: "📈", down: "📉", warning: "⚠️",
-  sparkle: "✨", menu: "☰", cash: "💵", chevron: "▶️", star: "⭐",
+  sparkle: "✨", menu: "☰", cash: "💵", chevron: "▶️", star: "⭐", upload: "📥",
 };
 
 function AppIcon({ name, size = 16, className = "" }) {
@@ -539,6 +539,7 @@ function CustomersTab({ customers, setCustomers, customerStats, staff }) {
   const [modal, setModal] = useState(null); // {mode, data}
   const [search, setSearch] = useState("");
   const [detailId, setDetailId] = useState(null);
+  const [importModal, setImportModal] = useState(null); // {raw, rows}
 
   const filtered = customers.filter(c =>
     c.name.toLowerCase().includes(search.toLowerCase()) || (c.mobile || "").includes(search)
@@ -564,6 +565,57 @@ function CustomersTab({ customers, setCustomers, customerStats, staff }) {
     setCustomers(customers.filter(c => c.id !== id));
   }
 
+  // ---- Bulk import ----
+  function parseContacts(text) {
+    const existingMobiles = new Set(customers.map((c) => (c.mobile || "").replace(/[^0-9]/g, "")));
+    const seen = new Set();
+    const rows = [];
+    const lines = text.split(/\r?\n/);
+    for (let line of lines) {
+      line = line.trim();
+      if (!line) continue;
+      const parts = line.split(/\t|,/).map((p) => p.trim().replace(/^"|"$/g, ""));
+      if (parts.length < 2) continue;
+      const lower = parts[0].toLowerCase();
+      if (lower === "name" || lower === "full name") continue; // skip header row
+      let name = "", mobile = "";
+      // figure out which column is the phone number vs the name
+      const digitsA = parts[0].replace(/[^0-9]/g, "");
+      const digitsB = parts[1].replace(/[^0-9]/g, "");
+      if (digitsA.length >= 7 && digitsA.length >= parts[0].length - 2) {
+        mobile = parts[0]; name = parts[1];
+      } else {
+        name = parts[0]; mobile = parts[1];
+      }
+      const cleanMobile = mobile.replace(/[^0-9]/g, "");
+      if (!name || cleanMobile.length < 7) continue;
+      if (seen.has(cleanMobile) || existingMobiles.has(cleanMobile)) continue;
+      seen.add(cleanMobile);
+      rows.push({ name, mobile });
+    }
+    return rows;
+  }
+
+  function openImport() { setImportModal({ raw: "", rows: [] }); }
+
+  function handleRawChange(text) {
+    setImportModal({ raw: text, rows: parseContacts(text) });
+  }
+
+  function handleFile(file) {
+    const reader = new FileReader();
+    reader.onload = (e) => handleRawChange(String(e.target.result || ""));
+    reader.readAsText(file);
+  }
+
+  function confirmImport() {
+    const additions = importModal.rows.map((r) => ({
+      id: uid(), name: r.name, mobile: r.mobile, tags: "", notes: "", createdAt: todayStr(), log: [],
+    }));
+    setCustomers([...customers, ...additions]);
+    setImportModal(null);
+  }
+
   const detail = detailId ? customers.find(c => c.id === detailId) : null;
 
   return (
@@ -571,7 +623,12 @@ function CustomersTab({ customers, setCustomers, customerStats, staff }) {
       <SectionHeader
         title="Customers"
         desc={`${customers.length} total`}
-        action={<Btn onClick={openAdd}><AppIcon name="add" size={16} /> Add Customer</Btn>}
+        action={
+          <div className="flex gap-2">
+            <Btn variant="outline" onClick={openImport}><AppIcon name="upload" size={16} /> Import Contacts</Btn>
+            <Btn onClick={openAdd}><AppIcon name="add" size={16} /> Add Customer</Btn>
+          </div>
+        }
       />
 
       <div className="mb-4 flex items-center gap-2 rounded-lg border border-[#f5d3e0] bg-white px-3 py-2">
@@ -622,6 +679,58 @@ function CustomersTab({ customers, setCustomers, customerStats, staff }) {
             <Field label="Notes"><TextArea value={modal.data.notes} onChange={e => setModal({ ...modal, data: { ...modal.data, notes: e.target.value } })} /></Field>
             <Btn type="submit" className="w-full justify-center">Save Customer</Btn>
           </form>
+        </Modal>
+      )}
+
+      {importModal && (
+        <Modal title="Import Contacts" onClose={() => setImportModal(null)} wide>
+          <p className="mb-3 text-sm text-[#2B2320]/60">
+            Paste a contact list below (one per line, name and mobile separated by a comma or tab —
+            this is what you get exporting from Google Contacts, Excel, or your phone as a .csv file),
+            or upload a .csv/.txt file directly. Duplicate mobile numbers already in your customer list are skipped automatically.
+          </p>
+          <Field label="Upload a file (optional)">
+            <input
+              type="file"
+              accept=".csv,.txt"
+              onChange={(e) => e.target.files[0] && handleFile(e.target.files[0])}
+              className="w-full text-sm"
+            />
+          </Field>
+          <Field label="Or paste contacts here">
+            <TextArea
+              value={importModal.raw}
+              onChange={(e) => handleRawChange(e.target.value)}
+              placeholder={"Fatima Ahmed, 33112233\nSara Khalid, 39445566"}
+              className="min-h-[120px]"
+            />
+          </Field>
+
+          {importModal.raw && (
+            <div className="mb-3 rounded-lg bg-[#FFF6F8] p-3">
+              <div className="mb-2 text-sm font-medium text-[#2B2320]">
+                {importModal.rows.length} new contact{importModal.rows.length === 1 ? "" : "s"} ready to import
+              </div>
+              {importModal.rows.length > 0 && (
+                <div className="max-h-48 overflow-y-auto">
+                  <table className="w-full text-sm">
+                    <tbody>
+                      {importModal.rows.map((r, i) => (
+                        <tr key={i} className="border-b border-white/60">
+                          <Td className="font-medium">{r.name}</Td>
+                          <Td>{r.mobile}</Td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          <Btn className="w-full justify-center" onClick={confirmImport} disabled={!importModal.rows.length}>
+            <AppIcon name="upload" size={16} /> Import {importModal.rows.length || ""} Contact{importModal.rows.length === 1 ? "" : "s"}
+          </Btn>
         </Modal>
       )}
 
