@@ -1,7 +1,33 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { createClient } from "@supabase/supabase-js";
-import { SUPABASE_URL, SUPABASE_ANON_KEY, APP_NAME, BUSINESS, INVOICE_PREFIX, STAFF_USERS } from "./config.js";
+import emailjs from "@emailjs/browser";
+import {
+  SUPABASE_URL, SUPABASE_ANON_KEY, APP_NAME, BUSINESS, INVOICE_PREFIX, STAFF_USERS,
+  EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, EMAILJS_PUBLIC_KEY, NOTIFY_EMAIL,
+} from "./config.js";
+
+if (EMAILJS_PUBLIC_KEY) {
+  try { emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY }); } catch (e) {}
+}
+
+/** Sends a follow-up reminder email when an appointment is booked.
+ *  Silently does nothing if EmailJS isn't configured yet (see SETUP-GUIDE.md). */
+async function sendFollowUpEmail(customerName, mobile, dateStr, time, serviceNames) {
+  if (!EMAILJS_SERVICE_ID || !EMAILJS_TEMPLATE_ID || !EMAILJS_PUBLIC_KEY || !NOTIFY_EMAIL) return;
+  try {
+    await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+      to_email: NOTIFY_EMAIL,
+      customer_name: customerName || "Walk-in",
+      customer_mobile: mobile || "",
+      appointment_date: fmtDate(dateStr),
+      appointment_time: time || "",
+      services: serviceNames || "",
+    });
+  } catch (e) {
+    console.error("Follow-up email failed:", e);
+  }
+}
 
 /* ------------------------------------------------------------------ */
 /* Constants                                                          */
@@ -83,6 +109,15 @@ const fmtDate = (d) => {
 const fmtMoney = (n) => `BHD ${Number(n || 0).toFixed(3)}`;
 const monthLabel = (m, y) => new Date(y, m, 1).toLocaleDateString("en-GB", { month: "long", year: "numeric" });
 const daysBetween = (a, b) => Math.floor((new Date(b) - new Date(a)) / 86400000);
+
+/** Green = visited within 30 days, Yellow = 31–90 days, Red = 90+ days or never visited. */
+function customerStatusDot(lastVisit) {
+  if (!lastVisit) return { color: "#B23A3A", label: "Not visited yet" };
+  const days = daysBetween(lastVisit, todayStr());
+  if (days <= 30) return { color: "#4E7C59", label: `Regular — last visit ${days}d ago` };
+  if (days <= 90) return { color: "#C9A15A", label: `Slowing down — last visit ${days}d ago` };
+  return { color: "#B23A3A", label: `Not coming — last visit ${days}d ago` };
+}
 const waNumber = (mobile) => {
   let n = (mobile || "").replace(/[^0-9]/g, "");
   if (n.length === 8) n = "973" + n;
@@ -438,11 +473,12 @@ export default function App({ supabase, currentUser, onLogout }) {
         .cbl-heading { font-family: 'Playfair Display', serif; }
         .cbl-card { border: 1px solid #f6e1ea; box-shadow: 0 1px 2px rgba(214,51,108,0.04); }
         @media print {
+          @page { size: A4; margin: 12mm; }
+          body * { visibility: hidden; }
+          #report-print, #report-print *, #salary-slip-print, #salary-slip-print * { visibility: visible; }
+          #report-print, #salary-slip-print { position: absolute; left: 0; top: 0; width: 100%; }
           .no-print { display: none !important; }
-          .print-area { display: block !important; }
-          body { background: white; }
         }
-        .print-area { display: none; }
       `}</style>
 
       {!allLoaded ? (
@@ -532,7 +568,7 @@ export default function App({ supabase, currentUser, onLogout }) {
               {tab === "appointments" && !isStaff && <AppointmentsTab {...{ appointments, setAppointments, customers, setCustomers, staff, services, custMap, staffMap, svcMap, setTab, setSales, currentUser }} />}
               {tab === "sales" && <SalesTab {...{ sales, setSales, customers, setCustomers, staff, services, custMap, staffMap, svcMap, currentUser }} />}
               {tab === "credit" && !isStaff && <CreditTab {...{ sales, setSales, custMap, currentUser }} />}
-              {tab === "expenses" && !isStaff && <ExpensesTab {...{ expenses, setExpenses }} />}
+              {tab === "expenses" && !isStaff && <ExpensesTab {...{ expenses, setExpenses, staff }} />}
               {tab === "suppliers" && !isStaff && <SuppliersTab {...{ suppliers, setSuppliers, purchases, supplierPayments, setTab }} />}
               {tab === "purchases" && !isStaff && <PurchasesTab {...{ purchases, setPurchases, suppliers, suppMap, supplierPayments, setSupplierPayments }} />}
               {tab === "staff" && !isStaff && <StaffTab {...{ staff, setStaff, salarySlips, setSalarySlips }} />}
@@ -551,6 +587,23 @@ export default function App({ supabase, currentUser, onLogout }) {
 /* DASHBOARD                                                           */
 /* ================================================================== */
 
+function ProgressRing({ percent, color, size = 84, label, value }) {
+  const clamped = Math.max(0, Math.min(100, percent));
+  return (
+    <div className="flex flex-col items-center">
+      <div
+        className="relative flex items-center justify-center rounded-full"
+        style={{ width: size, height: size, background: `conic-gradient(${color} ${clamped * 3.6}deg, #F1E3E9 0deg)` }}
+      >
+        <div className="flex flex-col items-center justify-center rounded-full bg-white" style={{ width: size - 14, height: size - 14 }}>
+          <span className="cbl-heading text-base text-[#2B2320]">{value}</span>
+        </div>
+      </div>
+      <span className="mt-2 text-center text-[11px] text-[#2B2320]/55">{label}</span>
+    </div>
+  );
+}
+
 function Dashboard({ customers, appointments, sales, expenses, custMap, staffMap, svcMap, customerStats, setTab }) {
   const today = todayStr();
   const now = new Date();
@@ -561,31 +614,90 @@ function Dashboard({ customers, appointments, sales, expenses, custMap, staffMap
   const monthExpenses = expenses.filter(e => e.date.startsWith(monthPrefix)).reduce((sum, e) => sum + Number(e.amount), 0);
   const outstandingCredit = sales.filter(s => (s.amountPaid || 0) < s.amount).reduce((sum, s) => sum + (s.amount - (s.amountPaid || 0)), 0);
 
-  const regulars = customers.filter(c => (customerStats[c.id]?.visits || 0) >= 3);
+  const withStatus = customers.map((c) => ({ c, dot: customerStatusDot(customerStats[c.id]?.lastVisit) }));
+  const regularCount = withStatus.filter((x) => x.dot.color === "#4E7C59").length;
+  const slowingCount = withStatus.filter((x) => x.dot.color === "#C9A15A" ).length;
+  const inactiveCount = withStatus.filter((x) => x.dot.color === "#B23A3A" && customerStats[x.c.id]?.lastVisit).length;
   const inactive = customers.filter(c => {
     const lv = customerStats[c.id]?.lastVisit;
-    if (!lv) return false; // never-visited customers are shown separately below
+    if (!lv) return false;
     return daysBetween(lv, today) >= 30;
   });
   const neverVisited = customers.filter(c => !customerStats[c.id]?.lastVisit);
+  const net = monthRevenue - monthExpenses;
+  const regularPct = customers.length ? Math.round((regularCount / customers.length) * 100) : 0;
+
+  const itemNames = (a) => (a.items && a.items.length ? a.items.map((it) => it.name).join(", ") : svcMap[a.serviceId]?.name || "Service");
 
   return (
     <div>
-      <SectionHeader title="Dashboard" desc={`Today, ${fmtDate(today)}`} />
+      {/* Hero banner */}
+      <div className="mb-5 overflow-hidden rounded-[28px] p-6 text-white shadow-lg sm:p-7" style={{ background: "linear-gradient(120deg,#E0447C 0%,#B0225F 55%,#5C1140 100%)" }}>
+        <div className="flex flex-wrap items-center justify-between gap-6">
+          <div>
+            <div className="text-xs uppercase tracking-[0.2em] text-[#F5DBA0]">Welcome back</div>
+            <h2 className="cbl-heading mt-1 text-2xl sm:text-3xl">Cherrys Beauty Lounge</h2>
+            <div className="mt-1 text-sm text-white/70">{fmtDate(today)}</div>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <div className="rounded-2xl bg-white/10 px-4 py-3 backdrop-blur">
+              <div className="text-[10px] uppercase tracking-wide text-white/60">This Month Net</div>
+              <div className="cbl-heading text-xl">{fmtMoney(net)}</div>
+            </div>
+            <div className="rounded-2xl bg-white/10 px-4 py-3 backdrop-blur">
+              <div className="text-[10px] uppercase tracking-wide text-white/60">Today's Appointments</div>
+              <div className="cbl-heading text-xl">{todaysAppts.length}</div>
+            </div>
+            <div className="rounded-2xl bg-white/10 px-4 py-3 backdrop-blur">
+              <div className="text-[10px] uppercase tracking-wide text-white/60">Outstanding Credit</div>
+              <div className="cbl-heading text-xl">{fmtMoney(outstandingCredit)}</div>
+            </div>
+          </div>
+        </div>
+      </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        <StatCard label="Total Customers" value={customers.length} icon="users" tone="rose" />
-        <StatCard label="Regular Customers" value={regulars.length} icon="star" tone="gold" sub="3+ visits" />
-        <StatCard label="Not Coming Back" value={inactive.length} icon="warning" tone="amber" sub="30+ days inactive" />
-        <StatCard label="Today's Appointments" value={todaysAppts.length} icon="calendar" tone="rose" />
-        <StatCard label="This Month Sales" value={fmtMoney(monthRevenue)} icon="up" tone="green" />
-        <StatCard label="This Month Expenses" value={fmtMoney(monthExpenses)} icon="down" tone="red" />
-        <StatCard label="Net This Month" value={fmtMoney(monthRevenue - monthExpenses)} icon="cash" tone={monthRevenue - monthExpenses >= 0 ? "green" : "red"} />
-        <StatCard label="Outstanding Credit" value={fmtMoney(outstandingCredit)} icon="credit" tone="amber" />
+      <div className="grid gap-5 lg:grid-cols-3">
+        {/* Customer health ring card */}
+        <div className="cbl-card rounded-[24px] bg-white p-5 shadow-sm">
+          <h3 className="cbl-heading mb-4 text-base text-[#2B2320]">Customer Health</h3>
+          <div className="flex items-center justify-around">
+            <ProgressRing percent={regularPct} color="#4E7C59" value={regularCount} label="Regular" />
+            <ProgressRing percent={customers.length ? (slowingCount / customers.length) * 100 : 0} color="#C9A15A" value={slowingCount} label="Slowing down" />
+            <ProgressRing percent={customers.length ? (inactiveCount / customers.length) * 100 : 0} color="#B23A3A" value={inactiveCount} label="Not coming" />
+          </div>
+          <div className="mt-4 text-center text-xs text-[#2B2320]/45">{customers.length} total customers</div>
+        </div>
+
+        {/* Money card */}
+        <div className="cbl-card rounded-[24px] p-5 shadow-sm" style={{ background: "linear-gradient(160deg,#FFF6F8,#FCE9F1)" }}>
+          <h3 className="cbl-heading mb-4 text-base text-[#2B2320]">This Month</h3>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between rounded-xl bg-white/70 px-3 py-2.5">
+              <span className="flex items-center gap-2 text-sm text-[#2B2320]/70"><span className="h-2 w-2 rounded-full bg-[#4E7C59]"></span>Sales</span>
+              <span className="font-semibold text-[#2B2320]">{fmtMoney(monthRevenue)}</span>
+            </div>
+            <div className="flex items-center justify-between rounded-xl bg-white/70 px-3 py-2.5">
+              <span className="flex items-center gap-2 text-sm text-[#2B2320]/70"><span className="h-2 w-2 rounded-full bg-[#B23A3A]"></span>Expenses</span>
+              <span className="font-semibold text-[#2B2320]">{fmtMoney(monthExpenses)}</span>
+            </div>
+            <div className="flex items-center justify-between rounded-xl px-3 py-2.5 text-white" style={{ background: "linear-gradient(135deg,#D6336C,#A61E5C)" }}>
+              <span className="text-sm">Net Profit</span>
+              <span className="cbl-heading">{fmtMoney(net)}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Quick stats stack */}
+        <div className="grid grid-cols-2 gap-3">
+          <StatCard label="Total Customers" value={customers.length} icon="users" tone="rose" />
+          <StatCard label="Today's Appts" value={todaysAppts.length} icon="calendar" tone="gold" />
+          <StatCard label="Regulars" value={regularCount} icon="star" tone="green" sub="within 30 days" />
+          <StatCard label="Credit Due" value={fmtMoney(outstandingCredit)} icon="credit" tone="amber" />
+        </div>
       </div>
 
       <div className="mt-6 grid gap-5 lg:grid-cols-2">
-        <div className="cbl-card rounded-2xl bg-white p-4 shadow-sm">
+        <div className="cbl-card rounded-[24px] bg-white p-5 shadow-sm">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="cbl-heading text-base text-[#2B2320]">Today's Appointments</h3>
             <button onClick={() => setTab("appointments")} className="flex items-center text-xs font-medium text-[#D6336C]">View all <AppIcon name="chevron" size={14} /></button>
@@ -593,12 +705,13 @@ function Dashboard({ customers, appointments, sales, expenses, custMap, staffMap
           {todaysAppts.length === 0 ? (
             <Empty icon="calendar" text="No appointments booked for today." />
           ) : (
-            <div className="divide-y divide-[#fbe8ef]">
+            <div className="space-y-2">
               {todaysAppts.map(a => (
-                <div key={a.id} className="flex items-center justify-between py-2 text-sm">
-                  <div>
+                <div key={a.id} className="flex items-center gap-3 rounded-xl bg-[#FFF6F8] px-3 py-2.5 text-sm">
+                  <div className="h-8 w-1.5 shrink-0 rounded-full" style={{ background: a.status === "Completed" ? "#4E7C59" : a.status === "Cancelled" || a.status === "No Show" ? "#B23A3A" : "#D6336C" }}></div>
+                  <div className="flex-1">
                     <div className="font-medium text-[#2B2320]">{a.time} — {custMap[a.customerId]?.name || "Walk-in"}</div>
-                    <div className="text-xs text-[#2B2320]/50">{svcMap[a.serviceId]?.name} with {staffMap[a.staffId]?.name}</div>
+                    <div className="text-xs text-[#2B2320]/50">{itemNames(a)} with {staffMap[a.staffId]?.name}</div>
                   </div>
                   <Pill tone={a.status === "Completed" ? "green" : a.status === "Cancelled" || a.status === "No Show" ? "red" : "rose"}>{a.status}</Pill>
                 </div>
@@ -607,7 +720,7 @@ function Dashboard({ customers, appointments, sales, expenses, custMap, staffMap
           )}
         </div>
 
-        <div className="cbl-card rounded-2xl bg-white p-4 shadow-sm">
+        <div className="cbl-card rounded-[24px] bg-white p-5 shadow-sm">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="cbl-heading text-base text-[#2B2320]">Customers to Win Back</h3>
             <button onClick={() => setTab("whatsapp")} className="flex items-center text-xs font-medium text-[#D6336C]">Send offer <AppIcon name="chevron" size={14} /></button>
@@ -615,10 +728,11 @@ function Dashboard({ customers, appointments, sales, expenses, custMap, staffMap
           {inactive.length === 0 ? (
             <Empty icon="star" text="Everyone's visiting regularly — nice work!" />
           ) : (
-            <div className="divide-y divide-[#fbe8ef]">
+            <div className="space-y-2">
               {inactive.slice(0, 8).map(c => (
-                <div key={c.id} className="flex items-center justify-between py-2 text-sm">
-                  <div>
+                <div key={c.id} className="flex items-center gap-3 rounded-xl bg-[#FFF6F8] px-3 py-2.5 text-sm">
+                  <div className="h-8 w-1.5 shrink-0 rounded-full bg-[#C97B2E]"></div>
+                  <div className="flex-1">
                     <div className="font-medium text-[#2B2320]">{c.name}</div>
                     <div className="text-xs text-[#2B2320]/50">Last visit {fmtDate(customerStats[c.id]?.lastVisit)}</div>
                   </div>
@@ -633,7 +747,7 @@ function Dashboard({ customers, appointments, sales, expenses, custMap, staffMap
       </div>
 
       {neverVisited.length > 0 && (
-        <div className="mt-5 cbl-card rounded-2xl bg-white p-4 shadow-sm">
+        <div className="mt-5 cbl-card rounded-[24px] bg-white p-5 shadow-sm">
           <h3 className="cbl-heading mb-3 text-base text-[#2B2320]">New Customers, No Visit Yet</h3>
           <div className="flex flex-wrap gap-2">
             {neverVisited.slice(0, 12).map(c => <Pill key={c.id} tone="gray">{c.name}</Pill>)}
@@ -769,6 +883,12 @@ function CustomersTab({ customers, setCustomers, customerStats, staff }) {
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or mobile…" className="w-full bg-transparent text-sm outline-none" />
       </div>
 
+      <div className="mb-4 flex flex-wrap items-center gap-4 text-xs text-[#2B2320]/60">
+        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: "#4E7C59" }}></span> Regular (0–30 days)</span>
+        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: "#C9A15A" }}></span> Slowing down (31–90 days)</span>
+        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: "#B23A3A" }}></span> Not coming (90+ days / never)</span>
+      </div>
+
       {filtered.length === 0 ? (
         <Empty icon="users" text="No customers yet. Add your first customer to get started." action={<Btn onClick={openAdd} className="mt-3"><AppIcon name="add" size={14} /> Add Customer</Btn>} />
       ) : (
@@ -780,9 +900,13 @@ function CustomersTab({ customers, setCustomers, customerStats, staff }) {
             <tbody className="divide-y divide-[#fbe8ef]">
               {filtered.map(c => {
                 const st = customerStats[c.id] || {};
+                const dot = customerStatusDot(st.lastVisit);
                 return (
                   <tr key={c.id} className="hover:bg-[#FFF6F8] cursor-pointer" onClick={() => setDetailId(c.id)}>
-                    <Td className="font-medium text-[#2B2320]">{c.name}</Td>
+                    <Td className="font-medium text-[#2B2320]">
+                      <span className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: dot.color }} title={dot.label}></span>
+                      {c.name}
+                    </Td>
                     <Td>{c.mobile}</Td>
                     <Td>{c.tags ? c.tags.split(",").map((t, i) => <Pill key={i} tone="rose">{t.trim()}</Pill>) : "—"}</Td>
                     <Td>{st.visits || 0}</Td>
@@ -934,10 +1058,13 @@ function AppointmentsTab({ appointments, setAppointments, customers, setCustomer
   const [modal, setModal] = useState(null);
 
   const dayAppts = appointments.filter(a => a.date === date).sort((a, b) => a.time.localeCompare(b.time));
+  const itemsOf = (a) => a.items && a.items.length ? a.items : (a.serviceId && svcMap[a.serviceId] ? [{ name: svcMap[a.serviceId].name, price: svcMap[a.serviceId].price }] : []);
+  const totalOf = (a) => itemsOf(a).reduce((sum, it) => sum + Number(it.price || 0), 0);
 
   function openAdd() {
     setModal({
-      date, time: SLOTS[0], staffId: staff[0]?.id || "", serviceId: services[0]?.id || "",
+      date, time: SLOTS[0], staffId: staff[0]?.id || "",
+      items: [{ name: services[0]?.name || "", price: services[0]?.price ?? "" }],
       customerId: "", newCustomerName: "", newCustomerMobile: "", notes: "",
     });
   }
@@ -946,20 +1073,40 @@ function AppointmentsTab({ appointments, setAppointments, customers, setCustomer
     return new Set(appointments.filter(a => a.staffId === staffId && a.date === dt && a.status !== "Cancelled").map(a => a.time));
   }
 
+  function updateItem(i, field, value) {
+    const items = [...modal.items];
+    items[i] = { ...items[i], [field]: value };
+    if (field === "name") {
+      const match = services.find((s) => s.name.toLowerCase() === value.toLowerCase());
+      if (match && !items[i].priceTouched) items[i].price = match.price;
+    }
+    if (field === "price") items[i].priceTouched = true;
+    setModal({ ...modal, items });
+  }
+  function addItemRow() { setModal({ ...modal, items: [...modal.items, { name: "", price: "" }] }); }
+  function removeItemRow(i) { setModal({ ...modal, items: modal.items.filter((_, idx) => idx !== i) }); }
+
   function save(e) {
     e.preventDefault();
     let customerId = modal.customerId;
     let updatedCustomers = customers;
+    let customerName = custMap[customerId]?.name;
+    let customerMobile = custMap[customerId]?.mobile;
     if (!customerId) {
-      if (!modal.newCustomerName || !modal.newCustomerMobile) { alert("Select an existing customer or enter a new customer's name & mobile."); return; }
+      if (!modal.newCustomerName || !modal.newCustomerMobile) { alert("Search for an existing customer or enter a new customer's name & mobile."); return; }
       const nc = { id: uid(), name: modal.newCustomerName, mobile: modal.newCustomerMobile, tags: "", notes: "", createdAt: todayStr(), log: [] };
       updatedCustomers = [...customers, nc];
       setCustomers(updatedCustomers);
       customerId = nc.id;
+      customerName = nc.name;
+      customerMobile = nc.mobile;
     }
+    const items = modal.items.filter((it) => it.name.trim());
+    if (items.length === 0) { alert("Add at least one service."); return; }
     const taken = bookedSlotsFor(modal.staffId, modal.date);
     if (taken.has(modal.time)) { if (!window.confirm("This staff member already has an appointment at this time. Book anyway?")) return; }
-    setAppointments([...appointments, { id: uid(), date: modal.date, time: modal.time, staffId: modal.staffId, serviceId: modal.serviceId, customerId, status: "Booked", notes: modal.notes }]);
+    setAppointments([...appointments, { id: uid(), date: modal.date, time: modal.time, staffId: modal.staffId, items, customerId, status: "Booked", notes: modal.notes }]);
+    sendFollowUpEmail(customerName, customerMobile, modal.date, modal.time, items.map((it) => it.name).join(", "));
     setModal(null);
   }
 
@@ -973,13 +1120,14 @@ function AppointmentsTab({ appointments, setAppointments, customers, setCustomer
   }
 
   function convertToSale(a) {
-    const svc = svcMap[a.serviceId];
-    const amount = svc?.price || 0;
+    const items = itemsOf(a);
+    const amount = totalOf(a);
+    const description = items.map((it) => it.name).join(", ") || "Service";
     setSales(prev => {
       const invoiceNo = nextInvoiceNo(prev, a.date);
       return [...prev, {
         id: uid(), invoiceNo, date: a.date, customerId: a.customerId, staffId: a.staffId,
-        description: svc?.name || "Service", amount, amountPaid: amount,
+        description, amount, amountPaid: amount,
         payments: [{ date: a.date, amount, mode: "Cash" }], addedBy: currentUser?.name || "—",
       }];
     });
@@ -1008,7 +1156,7 @@ function AppointmentsTab({ appointments, setAppointments, customers, setCustomer
         <div className="cbl-card overflow-x-auto rounded-2xl bg-white shadow-sm">
           <table className="w-full">
             <thead className="border-b border-[#fbe8ef]"><tr>
-              <Th>Time</Th><Th>Customer</Th><Th>Mobile</Th><Th>Service</Th><Th>Staff</Th><Th>Status</Th><Th></Th>
+              <Th>Time</Th><Th>Customer</Th><Th>Mobile</Th><Th>Service(s)</Th><Th>Total</Th><Th>Staff</Th><Th>Status</Th><Th></Th>
             </tr></thead>
             <tbody className="divide-y divide-[#fbe8ef]">
               {dayAppts.map(a => (
@@ -1016,7 +1164,8 @@ function AppointmentsTab({ appointments, setAppointments, customers, setCustomer
                   <Td className="font-medium">{a.time}</Td>
                   <Td>{custMap[a.customerId]?.name || "—"}</Td>
                   <Td>{custMap[a.customerId]?.mobile}</Td>
-                  <Td>{svcMap[a.serviceId]?.name}</Td>
+                  <Td>{itemsOf(a).map((it) => it.name).join(", ")}</Td>
+                  <Td>{fmtMoney(totalOf(a))}</Td>
                   <Td>{staffMap[a.staffId]?.name}</Td>
                   <Td><Pill tone={a.status === "Completed" ? "green" : a.status === "Cancelled" || a.status === "No Show" ? "red" : "rose"}>{a.status}</Pill></Td>
                   <Td>
@@ -1040,6 +1189,16 @@ function AppointmentsTab({ appointments, setAppointments, customers, setCustomer
       {modal && (
         <Modal title="Book Appointment" onClose={() => setModal(null)} wide>
           <form onSubmit={save}>
+            <Field label="Customer" required>
+              <CustomerPicker customers={customers} value={modal.customerId} onChange={(id) => setModal({ ...modal, customerId: id })} />
+            </Field>
+            {!modal.customerId && (
+              <div className="mb-3 grid grid-cols-2 gap-3 rounded-lg bg-[#FFF6F8] p-3">
+                <Field label="New Customer Name"><TextInput value={modal.newCustomerName} onChange={e => setModal({ ...modal, newCustomerName: e.target.value })} /></Field>
+                <Field label="New Customer Mobile"><TextInput value={modal.newCustomerMobile} onChange={e => setModal({ ...modal, newCustomerMobile: e.target.value })} /></Field>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-3">
               <Field label="Date" required><TextInput type="date" value={modal.date} onChange={e => setModal({ ...modal, date: e.target.value })} required /></Field>
               <Field label="Time Slot" required>
@@ -1051,32 +1210,48 @@ function AppointmentsTab({ appointments, setAppointments, customers, setCustomer
                 </Select>
               </Field>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Staff (customer's choice)" required>
-                <Select value={modal.staffId} onChange={e => setModal({ ...modal, staffId: e.target.value })} required>
-                  <option value="">Select staff</option>
-                  {staff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </Select>
-              </Field>
-              <Field label="Service" required>
-                <Select value={modal.serviceId} onChange={e => setModal({ ...modal, serviceId: e.target.value })} required>
-                  {services.map(s => <option key={s.id} value={s.id}>{s.name} — {fmtMoney(s.price)}</option>)}
-                </Select>
-              </Field>
-            </div>
-            <Field label="Existing Customer">
-              <Select value={modal.customerId} onChange={e => setModal({ ...modal, customerId: e.target.value })}>
-                <option value="">— New customer instead —</option>
-                {customers.map(c => <option key={c.id} value={c.id}>{c.name} ({c.mobile})</option>)}
+            <Field label="Staff (customer's choice)" required>
+              <Select value={modal.staffId} onChange={e => setModal({ ...modal, staffId: e.target.value })} required>
+                <option value="">Select staff</option>
+                {staff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </Select>
             </Field>
-            {!modal.customerId && (
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="New Customer Name"><TextInput value={modal.newCustomerName} onChange={e => setModal({ ...modal, newCustomerName: e.target.value })} /></Field>
-                <Field label="New Customer Mobile"><TextInput value={modal.newCustomerMobile} onChange={e => setModal({ ...modal, newCustomerMobile: e.target.value })} /></Field>
+
+            <div className="mb-1 flex items-center justify-between">
+              <span className="text-sm font-medium text-[#2B2320]/80">Services</span>
+              <button type="button" onClick={addItemRow} className="text-xs font-medium text-[#D6336C]">+ Add another service</button>
+            </div>
+            <datalist id="service-suggestions">
+              {services.map((s) => <option key={s.id} value={s.name} />)}
+            </datalist>
+            {modal.items.map((it, i) => (
+              <div key={i} className="mb-2 flex items-center gap-2">
+                <input
+                  list="service-suggestions"
+                  value={it.name}
+                  onChange={(e) => updateItem(i, "name", e.target.value)}
+                  placeholder="Type a service name…"
+                  className={inputCls + " flex-1"}
+                />
+                <input
+                  type="number" step="0.001" value={it.price}
+                  onChange={(e) => updateItem(i, "price", e.target.value)}
+                  placeholder="Price"
+                  className={inputCls + " w-28"}
+                />
+                {modal.items.length > 1 && (
+                  <button type="button" onClick={() => removeItemRow(i)} className="rounded p-1.5 text-[#B23A3A] hover:bg-[#B23A3A]/10"><AppIcon name="delete" size={14} /></button>
+                )}
               </div>
-            )}
+            ))}
+            <div className="mb-3 text-right text-sm text-[#2B2320]/60">
+              Total: <span className="font-semibold text-[#2B2320]">{fmtMoney(modal.items.reduce((s, it) => s + Number(it.price || 0), 0))}</span>
+            </div>
+
             <Field label="Notes"><TextArea value={modal.notes} onChange={e => setModal({ ...modal, notes: e.target.value })} /></Field>
+            <div className="mb-3 rounded-lg bg-[#4E7C59]/10 px-3 py-2 text-xs text-[#4E7C59]">
+              A follow-up reminder email will be sent automatically for this appointment date, if email notifications are set up.
+            </div>
             <Btn type="submit" className="w-full justify-center">Confirm Booking</Btn>
           </form>
         </Modal>
@@ -1382,19 +1557,38 @@ function CreditTab({ sales, setSales, custMap, currentUser }) {
 /* EXPENSES                                                             */
 /* ================================================================== */
 
-function ExpensesTab({ expenses, setExpenses }) {
+function ExpensesTab({ expenses, setExpenses, staff }) {
   const [modal, setModal] = useState(null);
   const [filter, setFilter] = useState("All");
 
-  function openAdd() { setModal({ date: todayStr(), category: EXPENSE_CATEGORIES[0], amount: "", notes: "" }); }
+  function openAdd() { setModal({ date: todayStr(), category: EXPENSE_CATEGORIES[0], amount: "", notes: "", staffId: "", basicSalary: "", houseAllowance: "", transportAllowance: "" }); }
+
+  function applyStaffDefaults(modalState, staffId) {
+    const s = staff.find((x) => x.id === staffId);
+    if (!s) return { ...modalState, staffId };
+    return { ...modalState, staffId, basicSalary: s.basicSalary || 0, houseAllowance: s.houseAllowance || 0, transportAllowance: s.transportAllowance || 0 };
+  }
+
   function save(e) {
     e.preventDefault();
-    if (!modal.amount) return;
-    setExpenses([...expenses, { id: uid(), date: modal.date, category: modal.category, amount: Number(modal.amount), notes: modal.notes }]);
+    const isSalary = modal.category === "Staff Salary";
+    const amount = isSalary
+      ? Number(modal.basicSalary || 0) + Number(modal.houseAllowance || 0) + Number(modal.transportAllowance || 0)
+      : Number(modal.amount || 0);
+    if (!amount) return;
+    const record = { id: uid(), date: modal.date, category: modal.category, amount, notes: modal.notes };
+    if (isSalary) {
+      record.staffId = modal.staffId;
+      record.basicSalary = Number(modal.basicSalary || 0);
+      record.houseAllowance = Number(modal.houseAllowance || 0);
+      record.transportAllowance = Number(modal.transportAllowance || 0);
+    }
+    setExpenses([...expenses, record]);
     setModal(null);
   }
   function del(id) { if (confirmDelete("Delete this expense?")) setExpenses(expenses.filter(x => x.id !== id)); }
 
+  const staffMap = Object.fromEntries((staff || []).map((s) => [s.id, s]));
   const filtered = filter === "All" ? expenses : filter === "Government & Bills" ? expenses.filter(e => GOV_CATEGORIES.includes(e.category) || e.category === "Shop Rent" || e.category === "Electricity Bill") : expenses.filter(e => e.category === filter);
   const sorted = [...filtered].sort((a, b) => b.date.localeCompare(a.date));
   const total = sorted.reduce((sum, e) => sum + Number(e.amount), 0);
@@ -1414,19 +1608,24 @@ function ExpensesTab({ expenses, setExpenses }) {
       ) : (
         <div className="cbl-card overflow-x-auto rounded-2xl bg-white shadow-sm">
           <table className="w-full">
-            <thead className="border-b border-[#fbe8ef]"><tr><Th>Date</Th><Th>Category</Th><Th>Amount</Th><Th>Notes</Th><Th></Th></tr></thead>
+            <thead className="border-b border-[#fbe8ef]"><tr><Th>Date</Th><Th>Category</Th><Th>Details</Th><Th>Amount</Th><Th>Notes</Th><Th></Th></tr></thead>
             <tbody className="divide-y divide-[#fbe8ef]">
               {sorted.map(e => (
                 <tr key={e.id} className="hover:bg-[#FFF6F8]">
                   <Td>{fmtDate(e.date)}</Td>
                   <Td><Pill tone={GOV_CATEGORIES.includes(e.category) ? "amber" : "gray"}>{e.category}</Pill></Td>
+                  <Td className="text-xs text-[#2B2320]/60">
+                    {e.category === "Staff Salary" && e.staffId
+                      ? `${staffMap[e.staffId]?.name || "—"} · Basic ${fmtMoney(e.basicSalary)} + House ${fmtMoney(e.houseAllowance)} + Transport ${fmtMoney(e.transportAllowance)}`
+                      : "—"}
+                  </Td>
                   <Td>{fmtMoney(e.amount)}</Td>
                   <Td className="max-w-xs truncate">{e.notes}</Td>
                   <Td><button onClick={() => del(e.id)} className="rounded p-1.5 text-[#B23A3A] hover:bg-[#B23A3A]/10"><AppIcon name="delete" size={14} /></button></Td>
                 </tr>
               ))}
             </tbody>
-            <tfoot><tr className="border-t border-[#fbe8ef] font-semibold"><Td>Total</Td><Td /><Td>{fmtMoney(total)}</Td><Td /><Td /></tr></tfoot>
+            <tfoot><tr className="border-t border-[#fbe8ef] font-semibold"><Td>Total</Td><Td /><Td /><Td>{fmtMoney(total)}</Td><Td /><Td /></tr></tfoot>
           </table>
         </div>
       )}
@@ -1440,7 +1639,28 @@ function ExpensesTab({ expenses, setExpenses }) {
                 {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
               </Select>
             </Field>
-            <Field label="Amount (BHD)" required><TextInput type="number" step="0.001" value={modal.amount} onChange={e => setModal({ ...modal, amount: e.target.value })} required /></Field>
+
+            {modal.category === "Staff Salary" ? (
+              <>
+                <Field label="Staff Member" required>
+                  <Select value={modal.staffId} onChange={e => setModal(applyStaffDefaults(modal, e.target.value))} required>
+                    <option value="">Select staff</option>
+                    {(staff || []).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </Select>
+                </Field>
+                <Field label="Basic Salary (BHD)" required><TextInput type="number" step="0.001" value={modal.basicSalary} onChange={e => setModal({ ...modal, basicSalary: e.target.value })} required /></Field>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="House Allowance (BHD)"><TextInput type="number" step="0.001" value={modal.houseAllowance} onChange={e => setModal({ ...modal, houseAllowance: e.target.value })} /></Field>
+                  <Field label="Transport Allowance (BHD)"><TextInput type="number" step="0.001" value={modal.transportAllowance} onChange={e => setModal({ ...modal, transportAllowance: e.target.value })} /></Field>
+                </div>
+                <div className="mb-3 rounded-lg bg-[#FFF6F8] p-3 text-sm">
+                  Total: <span className="cbl-heading text-base text-[#D6336C]">{fmtMoney(Number(modal.basicSalary || 0) + Number(modal.houseAllowance || 0) + Number(modal.transportAllowance || 0))}</span>
+                </div>
+              </>
+            ) : (
+              <Field label="Amount (BHD)" required><TextInput type="number" step="0.001" value={modal.amount} onChange={e => setModal({ ...modal, amount: e.target.value })} required /></Field>
+            )}
+
             <Field label="Notes"><TextArea value={modal.notes} onChange={e => setModal({ ...modal, notes: e.target.value })} /></Field>
             <Btn type="submit" className="w-full justify-center">Save Expense</Btn>
           </form>
@@ -1526,12 +1746,12 @@ function PurchasesTab({ purchases, setPurchases, suppliers, suppMap, supplierPay
 
   function openAdd() {
     if (suppliers.length === 0) { alert("Add a supplier first in the Suppliers tab."); return; }
-    setModal({ supplierId: suppliers[0].id, invoiceNumber: "", date: todayStr(), amount: "", items: "" });
+    setModal({ supplierId: suppliers[0].id, invoiceNumber: "", invoiceDate: todayStr(), inputDate: todayStr(), amount: "", items: "" });
   }
   function save(e) {
     e.preventDefault();
     if (!modal.amount || !modal.invoiceNumber) return;
-    setPurchases([...purchases, { ...modal, id: uid(), amount: Number(modal.amount) }]);
+    setPurchases([...purchases, { ...modal, id: uid(), date: modal.invoiceDate, amount: Number(modal.amount) }]);
     setModal(null);
   }
   function del(id) { if (confirmDelete("Delete this purchase record?")) setPurchases(purchases.filter(p => p.id !== id)); }
@@ -1563,11 +1783,12 @@ function PurchasesTab({ purchases, setPurchases, suppliers, suppMap, supplierPay
       ) : (
         <div className="cbl-card mb-6 overflow-x-auto rounded-2xl bg-white shadow-sm">
           <table className="w-full">
-            <thead className="border-b border-[#fbe8ef]"><tr><Th>Date</Th><Th>Supplier</Th><Th>Invoice #</Th><Th>Amount</Th><Th>Items</Th><Th></Th></tr></thead>
+            <thead className="border-b border-[#fbe8ef]"><tr><Th>Invoice Date</Th><Th>Entered On</Th><Th>Supplier</Th><Th>Invoice #</Th><Th>Amount</Th><Th>Items</Th><Th></Th></tr></thead>
             <tbody className="divide-y divide-[#fbe8ef]">
               {sortedPurchases.map(p => (
                 <tr key={p.id} className="hover:bg-[#FFF6F8]">
-                  <Td>{fmtDate(p.date)}</Td>
+                  <Td>{fmtDate(p.invoiceDate || p.date)}</Td>
+                  <Td>{fmtDate(p.inputDate || p.date)}</Td>
                   <Td className="font-medium">{suppMap[p.supplierId]?.name || "—"}</Td>
                   <Td>{p.invoiceNumber}</Td>
                   <Td>{fmtMoney(p.amount)}</Td>
@@ -1611,7 +1832,10 @@ function PurchasesTab({ purchases, setPurchases, suppliers, suppMap, supplierPay
               </Select>
             </Field>
             <Field label="Invoice Number" required><TextInput value={modal.invoiceNumber} onChange={e => setModal({ ...modal, invoiceNumber: e.target.value })} required /></Field>
-            <Field label="Date" required><TextInput type="date" value={modal.date} onChange={e => setModal({ ...modal, date: e.target.value })} required /></Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Invoice Date" required><TextInput type="date" value={modal.invoiceDate} onChange={e => setModal({ ...modal, invoiceDate: e.target.value })} required /></Field>
+              <Field label="Input Date (entered today)" required><TextInput type="date" value={modal.inputDate} onChange={e => setModal({ ...modal, inputDate: e.target.value })} required /></Field>
+            </div>
             <Field label="Amount (BHD)" required><TextInput type="number" step="0.001" value={modal.amount} onChange={e => setModal({ ...modal, amount: e.target.value })} required /></Field>
             <Field label="Items / Notes"><TextArea value={modal.items} onChange={e => setModal({ ...modal, items: e.target.value })} /></Field>
             <Btn type="submit" className="w-full justify-center">Save Purchase</Btn>
@@ -1647,24 +1871,42 @@ function StaffTab({ staff, setStaff, salarySlips, setSalarySlips }) {
   const [slipModal, setSlipModal] = useState(null);
   const [printSlip, setPrintSlip] = useState(null);
 
-  function openAdd() { setModal({ name: "", role: "", mobile: "", baseSalary: "" }); }
+  function grossOf(s) { return Number(s.basicSalary || 0) + Number(s.houseAllowance || 0) + Number(s.transportAllowance || 0); }
+
+  function openAdd() { setModal({ name: "", role: "", mobile: "", basicSalary: "", houseAllowance: "", transportAllowance: "" }); }
   function save(e) {
     e.preventDefault();
     if (!modal.name) return;
-    if (modal.id) setStaff(staff.map(s => s.id === modal.id ? { ...modal, baseSalary: Number(modal.baseSalary) } : s));
-    else setStaff([...staff, { ...modal, id: uid(), baseSalary: Number(modal.baseSalary || 0) }]);
+    const clean = {
+      ...modal,
+      basicSalary: Number(modal.basicSalary || 0),
+      houseAllowance: Number(modal.houseAllowance || 0),
+      transportAllowance: Number(modal.transportAllowance || 0),
+    };
+    if (modal.id) setStaff(staff.map(s => s.id === modal.id ? clean : s));
+    else setStaff([...staff, { ...clean, id: uid() }]);
     setModal(null);
   }
   function del(id) { if (confirmDelete("Delete this staff member?")) setStaff(staff.filter(s => s.id !== id)); }
 
   function openSlip(s) {
     const now = new Date();
-    setSlipModal({ staffId: s.id, month: now.getMonth(), year: now.getFullYear(), baseSalary: s.baseSalary || 0, bonus: 0, deductions: 0 });
+    setSlipModal({
+      staffId: s.id, month: now.getMonth(), year: now.getFullYear(),
+      basicSalary: s.basicSalary || 0, houseAllowance: s.houseAllowance || 0, transportAllowance: s.transportAllowance || 0,
+      bonus: 0, deductions: 0,
+    });
   }
   function saveSlip(e) {
     e.preventDefault();
-    const net = Number(slipModal.baseSalary) + Number(slipModal.bonus || 0) - Number(slipModal.deductions || 0);
-    setSalarySlips([...salarySlips, { id: uid(), ...slipModal, baseSalary: Number(slipModal.baseSalary), bonus: Number(slipModal.bonus || 0), deductions: Number(slipModal.deductions || 0), netPay: net, generatedDate: todayStr() }]);
+    const gross = Number(slipModal.basicSalary || 0) + Number(slipModal.houseAllowance || 0) + Number(slipModal.transportAllowance || 0);
+    const net = gross + Number(slipModal.bonus || 0) - Number(slipModal.deductions || 0);
+    setSalarySlips([...salarySlips, {
+      id: uid(), ...slipModal,
+      basicSalary: Number(slipModal.basicSalary || 0), houseAllowance: Number(slipModal.houseAllowance || 0),
+      transportAllowance: Number(slipModal.transportAllowance || 0), bonus: Number(slipModal.bonus || 0),
+      deductions: Number(slipModal.deductions || 0), netPay: net, generatedDate: todayStr(),
+    }]);
     setSlipModal(null);
   }
   function delSlip(id) { if (confirmDelete("Delete this salary slip?")) setSalarySlips(salarySlips.filter(s => s.id !== id)); }
@@ -1681,14 +1923,17 @@ function StaffTab({ staff, setStaff, salarySlips, setSalarySlips }) {
       ) : (
         <div className="cbl-card mb-6 overflow-x-auto rounded-2xl bg-white shadow-sm">
           <table className="w-full">
-            <thead className="border-b border-[#fbe8ef]"><tr><Th>Name</Th><Th>Role</Th><Th>Mobile</Th><Th>Base Salary</Th><Th></Th></tr></thead>
+            <thead className="border-b border-[#fbe8ef]"><tr><Th>Name</Th><Th>Role</Th><Th>Mobile</Th><Th>Basic</Th><Th>House Allow.</Th><Th>Transport Allow.</Th><Th>Total</Th><Th></Th></tr></thead>
             <tbody className="divide-y divide-[#fbe8ef]">
               {staff.map(s => (
                 <tr key={s.id} className="hover:bg-[#FFF6F8]">
                   <Td className="font-medium">{s.name}</Td>
                   <Td>{s.role}</Td>
                   <Td>{s.mobile}</Td>
-                  <Td>{fmtMoney(s.baseSalary)}</Td>
+                  <Td>{fmtMoney(s.basicSalary)}</Td>
+                  <Td>{fmtMoney(s.houseAllowance)}</Td>
+                  <Td>{fmtMoney(s.transportAllowance)}</Td>
+                  <Td className="font-semibold">{fmtMoney(grossOf(s))}</Td>
                   <Td>
                     <div className="flex gap-1">
                       <Btn size="sm" variant="outline" onClick={() => openSlip(s)}>Generate Slip</Btn>
@@ -1709,13 +1954,13 @@ function StaffTab({ staff, setStaff, salarySlips, setSalarySlips }) {
       ) : (
         <div className="cbl-card overflow-x-auto rounded-2xl bg-white shadow-sm">
           <table className="w-full">
-            <thead className="border-b border-[#fbe8ef]"><tr><Th>Staff</Th><Th>Month</Th><Th>Base</Th><Th>Bonus</Th><Th>Deductions</Th><Th>Net Pay</Th><Th></Th></tr></thead>
+            <thead className="border-b border-[#fbe8ef]"><tr><Th>Staff</Th><Th>Month</Th><Th>Gross</Th><Th>Bonus</Th><Th>Deductions</Th><Th>Net Pay</Th><Th></Th></tr></thead>
             <tbody className="divide-y divide-[#fbe8ef]">
               {sortedSlips.map(s => (
                 <tr key={s.id} className="hover:bg-[#FFF6F8]">
                   <Td className="font-medium">{staffMap[s.staffId]?.name || "—"}</Td>
                   <Td>{monthLabel(s.month, s.year)}</Td>
-                  <Td>{fmtMoney(s.baseSalary)}</Td>
+                  <Td>{fmtMoney(Number(s.basicSalary || 0) + Number(s.houseAllowance || 0) + Number(s.transportAllowance || 0))}</Td>
                   <Td>{fmtMoney(s.bonus)}</Td>
                   <Td>{fmtMoney(s.deductions)}</Td>
                   <Td className="font-semibold">{fmtMoney(s.netPay)}</Td>
@@ -1738,7 +1983,12 @@ function StaffTab({ staff, setStaff, salarySlips, setSalarySlips }) {
             <Field label="Name" required><TextInput value={modal.name} onChange={e => setModal({ ...modal, name: e.target.value })} required /></Field>
             <Field label="Role"><TextInput value={modal.role} onChange={e => setModal({ ...modal, role: e.target.value })} placeholder="e.g. Hair Stylist" /></Field>
             <Field label="Mobile"><TextInput value={modal.mobile} onChange={e => setModal({ ...modal, mobile: e.target.value })} /></Field>
-            <Field label="Base Salary (BHD)" required><TextInput type="number" step="0.001" value={modal.baseSalary} onChange={e => setModal({ ...modal, baseSalary: e.target.value })} required /></Field>
+            <Field label="Basic Salary (BHD)" required><TextInput type="number" step="0.001" value={modal.basicSalary} onChange={e => setModal({ ...modal, basicSalary: e.target.value })} required /></Field>
+            <Field label="House Allowance (BHD)"><TextInput type="number" step="0.001" value={modal.houseAllowance} onChange={e => setModal({ ...modal, houseAllowance: e.target.value })} /></Field>
+            <Field label="Transport Allowance (BHD)"><TextInput type="number" step="0.001" value={modal.transportAllowance} onChange={e => setModal({ ...modal, transportAllowance: e.target.value })} /></Field>
+            <div className="mb-3 rounded-lg bg-[#FFF6F8] p-3 text-sm">
+              Total: <span className="cbl-heading text-base text-[#D6336C]">{fmtMoney(Number(modal.basicSalary || 0) + Number(modal.houseAllowance || 0) + Number(modal.transportAllowance || 0))}</span>
+            </div>
             <Btn type="submit" className="w-full justify-center">Save Staff</Btn>
           </form>
         </Modal>
@@ -1755,13 +2005,19 @@ function StaffTab({ staff, setStaff, salarySlips, setSalarySlips }) {
               </Field>
               <Field label="Year" required><TextInput type="number" value={slipModal.year} onChange={e => setSlipModal({ ...slipModal, year: Number(e.target.value) })} required /></Field>
             </div>
-            <Field label="Base Salary (BHD)" required><TextInput type="number" step="0.001" value={slipModal.baseSalary} onChange={e => setSlipModal({ ...slipModal, baseSalary: e.target.value })} required /></Field>
+            <Field label="Basic Salary (BHD)" required><TextInput type="number" step="0.001" value={slipModal.basicSalary} onChange={e => setSlipModal({ ...slipModal, basicSalary: e.target.value })} required /></Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="House Allowance (BHD)"><TextInput type="number" step="0.001" value={slipModal.houseAllowance} onChange={e => setSlipModal({ ...slipModal, houseAllowance: e.target.value })} /></Field>
+              <Field label="Transport Allowance (BHD)"><TextInput type="number" step="0.001" value={slipModal.transportAllowance} onChange={e => setSlipModal({ ...slipModal, transportAllowance: e.target.value })} /></Field>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Bonus (BHD)"><TextInput type="number" step="0.001" value={slipModal.bonus} onChange={e => setSlipModal({ ...slipModal, bonus: e.target.value })} /></Field>
               <Field label="Deductions (BHD)"><TextInput type="number" step="0.001" value={slipModal.deductions} onChange={e => setSlipModal({ ...slipModal, deductions: e.target.value })} /></Field>
             </div>
             <div className="mb-3 rounded-lg bg-[#FFF6F8] p-3 text-sm">
-              Net Pay: <span className="cbl-heading text-base text-[#D6336C]">{fmtMoney(Number(slipModal.baseSalary || 0) + Number(slipModal.bonus || 0) - Number(slipModal.deductions || 0))}</span>
+              Net Pay: <span className="cbl-heading text-base text-[#D6336C]">
+                {fmtMoney(Number(slipModal.basicSalary || 0) + Number(slipModal.houseAllowance || 0) + Number(slipModal.transportAllowance || 0) + Number(slipModal.bonus || 0) - Number(slipModal.deductions || 0))}
+              </span>
             </div>
             <Btn type="submit" className="w-full justify-center">Save Slip</Btn>
           </form>
@@ -1774,17 +2030,21 @@ function StaffTab({ staff, setStaff, salarySlips, setSalarySlips }) {
 }
 
 function SalarySlipPrint({ slip, staffName, onClose }) {
+  const gross = Number(slip.basicSalary || 0) + Number(slip.houseAllowance || 0) + Number(slip.transportAllowance || 0);
   return (
     <Modal title="Salary Slip" onClose={onClose} wide>
       <div id="salary-slip-print" className="rounded-xl border border-[#f5d3e0] p-6">
         <div className="mb-4 text-center">
-          <div className="cbl-heading text-xl text-[#D6336C]">Cherrys Beauty Lounge</div>
+          <img src="./assets/logo-dark-text.png" alt="Cherrys Beauty Lounge" className="mx-auto mb-2 h-9 w-auto object-contain" />
           <div className="text-xs text-[#2B2320]/50">Salary Slip — {monthLabel(slip.month, slip.year)}</div>
         </div>
         <div className="mb-4 flex justify-between text-sm"><span>Employee</span><span className="font-medium">{staffName}</span></div>
         <table className="w-full text-sm">
           <tbody>
-            <tr className="border-b border-[#fbe8ef]"><td className="py-2">Base Salary</td><td className="py-2 text-right">{fmtMoney(slip.baseSalary)}</td></tr>
+            <tr className="border-b border-[#fbe8ef]"><td className="py-2">Basic Salary</td><td className="py-2 text-right">{fmtMoney(slip.basicSalary)}</td></tr>
+            <tr className="border-b border-[#fbe8ef]"><td className="py-2">House Allowance</td><td className="py-2 text-right">{fmtMoney(slip.houseAllowance)}</td></tr>
+            <tr className="border-b border-[#fbe8ef]"><td className="py-2">Transport Allowance</td><td className="py-2 text-right">{fmtMoney(slip.transportAllowance)}</td></tr>
+            <tr className="border-b border-[#fbe8ef] font-medium"><td className="py-2">Gross Salary</td><td className="py-2 text-right">{fmtMoney(gross)}</td></tr>
             <tr className="border-b border-[#fbe8ef]"><td className="py-2">Bonus</td><td className="py-2 text-right">{fmtMoney(slip.bonus)}</td></tr>
             <tr className="border-b border-[#fbe8ef]"><td className="py-2">Deductions</td><td className="py-2 text-right">-{fmtMoney(slip.deductions)}</td></tr>
             <tr className="font-semibold"><td className="py-2">Net Pay</td><td className="py-2 text-right">{fmtMoney(slip.netPay)}</td></tr>
@@ -1989,40 +2249,47 @@ function ReportsTab({ sales, expenses, custMap, suppliers, suppMap, purchases, s
           </div>
         </div>
       ) : (
-        <div id="report-print" className="cbl-card rounded-2xl bg-white p-6 shadow-sm">
-          <div className="mb-4 text-center">
-            <img src="./assets/logo-dark-text.png" alt="Cherrys Beauty Lounge" className="mx-auto mb-2 h-10 w-auto object-contain" />
-            <div className="text-sm text-[#2B2320]/60">{titles[type]}{type !== "credit" && ` — ${monthLabel(month, year)}`}</div>
+        <div id="report-print" className="cbl-card overflow-hidden rounded-2xl bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b-2 border-[#2B2320] p-5">
+            <img src="./assets/logo-dark-text.png" alt="Cherrys Beauty Lounge" className="h-10 w-auto object-contain" />
+            <div className="text-right">
+              <div className="text-sm font-semibold text-[#2B2320]">{titles[type]}</div>
+              <div className="text-xs text-[#2B2320]/50">{type !== "credit" && monthLabel(month, year)}</div>
+            </div>
           </div>
-
+          <div className="p-5">
           {reportRows.length === 0 ? <Empty icon="file" text="No records for this period." /> : (
             <table className="w-full text-sm">
-              <thead className="border-b border-[#fbe8ef]"><tr>
-                {(type === "sales" || type === "credit") && <Th>Invoice #</Th>}
-                <Th>Date</Th>
-                {type === "sales" && <><Th>Customer</Th><Th>Service</Th><Th>Added By</Th></>}
-                {type === "expenses" && <Th>Category</Th>}
-                {type === "credit" && <><Th>Customer</Th><Th>Balance Due</Th></>}
-                {type === "supplierPayments" && <Th>Supplier</Th>}
-                <Th>Amount</Th>
+              <thead><tr className="bg-[#2B2320] text-white">
+                {(type === "sales" || type === "credit") && <th className="border border-[#2B2320] px-2 py-1.5 text-left">Invoice #</th>}
+                <th className="border border-[#2B2320] px-2 py-1.5 text-left">Date</th>
+                {type === "sales" && <><th className="border border-[#2B2320] px-2 py-1.5 text-left">Customer</th><th className="border border-[#2B2320] px-2 py-1.5 text-left">Service</th><th className="border border-[#2B2320] px-2 py-1.5 text-left">Added By</th></>}
+                {type === "expenses" && <th className="border border-[#2B2320] px-2 py-1.5 text-left">Category</th>}
+                {type === "credit" && <><th className="border border-[#2B2320] px-2 py-1.5 text-left">Customer</th><th className="border border-[#2B2320] px-2 py-1.5 text-left">Balance Due</th></>}
+                {type === "supplierPayments" && <th className="border border-[#2B2320] px-2 py-1.5 text-left">Supplier</th>}
+                <th className="border border-[#2B2320] px-2 py-1.5 text-right">Amount</th>
               </tr></thead>
-              <tbody className="divide-y divide-[#fbe8ef]">
+              <tbody>
                 {reportRows.map(r => (
                   <tr key={r.id}>
-                    {(type === "sales" || type === "credit") && <Td className="font-mono text-xs">{r.invoiceNo || "—"}</Td>}
-                    <Td>{fmtDate(r.date)}</Td>
-                    {type === "sales" && <><Td>{custMap[r.customerId]?.name}</Td><Td>{r.description}</Td><Td>{r.addedBy || "—"}</Td></>}
-                    {type === "expenses" && <Td>{r.category}</Td>}
-                    {type === "credit" && <><Td>{custMap[r.customerId]?.name}</Td><Td>{fmtMoney(r.amount - (r.amountPaid || 0))}</Td></>}
-                    {type === "supplierPayments" && <Td>{suppMap[r.supplierId]?.name}</Td>}
-                    <Td>{fmtMoney(r.amount)}</Td>
+                    {(type === "sales" || type === "credit") && <td className="border border-[#2B2320] px-2 py-1.5 font-mono text-xs">{r.invoiceNo || "—"}</td>}
+                    <td className="border border-[#2B2320] px-2 py-1.5">{fmtDate(r.date)}</td>
+                    {type === "sales" && <><td className="border border-[#2B2320] px-2 py-1.5">{custMap[r.customerId]?.name}</td><td className="border border-[#2B2320] px-2 py-1.5">{r.description}</td><td className="border border-[#2B2320] px-2 py-1.5">{r.addedBy || "—"}</td></>}
+                    {type === "expenses" && <td className="border border-[#2B2320] px-2 py-1.5">{r.category}</td>}
+                    {type === "credit" && <><td className="border border-[#2B2320] px-2 py-1.5">{custMap[r.customerId]?.name}</td><td className="border border-[#2B2320] px-2 py-1.5">{fmtMoney(r.amount - (r.amountPaid || 0))}</td></>}
+                    {type === "supplierPayments" && <td className="border border-[#2B2320] px-2 py-1.5">{suppMap[r.supplierId]?.name}</td>}
+                    <td className="border border-[#2B2320] px-2 py-1.5 text-right">{fmtMoney(r.amount)}</td>
                   </tr>
                 ))}
               </tbody>
-              <tfoot><tr className="border-t-2 border-[#2B2320]/20 font-semibold"><Td colSpan={type === "sales" ? 5 : type === "credit" ? 4 : type === "expenses" ? 2 : 2}>Total</Td><Td>{fmtMoney(total)}</Td></tr></tfoot>
+              <tfoot><tr className="font-semibold"><td className="border border-[#2B2320] px-2 py-1.5" colSpan={type === "sales" ? 4 : type === "credit" ? 3 : type === "expenses" ? 1 : 1}>Total</td><td className="border border-[#2B2320] px-2 py-1.5 text-right">{fmtMoney(total)}</td></tr></tfoot>
             </table>
           )}
           <div className="mt-6 text-center text-xs text-[#2B2320]/40">Printed on {fmtDate(todayStr())}</div>
+          </div>
+          <div className="bg-[#2B2320] px-5 py-3 text-center text-[10px] text-white/80">
+            {BUSINESS.cr} &nbsp;·&nbsp; Mobile {BUSINESS.phone} &nbsp;·&nbsp; {BUSINESS.email} &nbsp;·&nbsp; {BUSINESS.address}
+          </div>
         </div>
       )}
     </div>
