@@ -278,6 +278,34 @@ function AppIcon({ name, size = 16, className = "" }) {
   );
 }
 
+/** Shows the real logo image; if it fails to load (e.g. asset not uploaded yet),
+ *  falls back to a styled all-caps text wordmark so branding never looks broken. */
+function BrandMark({ variant = "dark", className = "", textClassName = "" }) {
+  const [failed, setFailed] = useState(false);
+  const src = variant === "light" ? "./assets/logo-light-text.png" : "./assets/logo-dark-text.png";
+  if (failed) {
+    return (
+      <div className={`cbl-heading leading-tight ${variant === "light" ? "text-white" : "text-[#2B2320]"} ${textClassName}`} style={{ letterSpacing: "0.04em" }}>
+        <div className="text-lg font-bold uppercase sm:text-xl">CHERRYS</div>
+        <div className={`text-[10px] uppercase tracking-[0.3em] ${variant === "light" ? "text-[#F5DBA0]" : "text-[#D6336C]"}`}>Beauty Lounge</div>
+      </div>
+    );
+  }
+  return <img src={src} alt="Cherrys Beauty Lounge" onError={() => setFailed(true)} className={className} />;
+}
+
+const SIDEBAR_THEMES = [
+  ["#E0447C", "#B0225F", "#5C1140"],
+  ["#7C3AED", "#5B21B6", "#2E1065"],
+  ["#0D9488", "#0F766E", "#134E4A"],
+  ["#EA580C", "#C2410C", "#7C2D12"],
+  ["#334155", "#1E293B", "#0F172A"],
+  ["#BE185D", "#9D174D", "#500724"],
+];
+function useSidebarTheme() {
+  return useMemo(() => SIDEBAR_THEMES[Math.floor(Math.random() * SIDEBAR_THEMES.length)], []);
+}
+
 function Modal({ title, onClose, children, wide }) {
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:p-8" onClick={onClose}>
@@ -397,6 +425,7 @@ function confirmDelete(msg) { return window.confirm(msg || "Delete this record? 
 export default function App({ supabase, currentUser, onLogout }) {
   const [navOpen, setNavOpen] = useState(false);
   const isStaff = currentUser.role === "staff";
+  const sidebarTheme = useSidebarTheme();
 
   const [customers, setCustomers, lCust] = useSupabaseList(supabase, ENTITIES.customers, []);
   const [staff, setStaff, lStaff] = useSupabaseList(supabase, ENTITIES.staff, []);
@@ -510,9 +539,12 @@ export default function App({ supabase, currentUser, onLogout }) {
       ) : (
         <div className="flex">
           {/* Sidebar */}
-          <aside className={`no-print fixed z-40 flex h-screen w-64 shrink-0 flex-col overflow-y-auto bg-gradient-to-b from-[#E0447C] via-[#B0225F] to-[#5C1140] text-white transition-transform md:static md:translate-x-0 ${navOpen ? "translate-x-0" : "-translate-x-full"}`}>
+          <aside
+            className={`no-print fixed z-40 flex h-screen w-64 shrink-0 flex-col overflow-y-auto text-white transition-transform md:static md:translate-x-0 ${navOpen ? "translate-x-0" : "-translate-x-full"}`}
+            style={{ background: `linear-gradient(180deg, ${sidebarTheme[0]}, ${sidebarTheme[1]}, ${sidebarTheme[2]})` }}
+          >
             <div className="border-b border-white/10 px-5 py-6">
-              <img src="./assets/logo-light-text.png" alt="Cherrys Beauty Lounge" className="h-9 w-auto object-contain" />
+              <BrandMark variant="light" className="h-9 w-auto object-contain" />
             </div>
             <nav className="flex-1 px-3 py-4">
               {NAV.map(item => {
@@ -547,7 +579,7 @@ export default function App({ supabase, currentUser, onLogout }) {
           <main className="min-h-screen w-full flex-1 md:ml-0">
             <div className="no-print sticky top-0 z-20 flex items-center gap-3 border-b border-[#efe6e0] bg-[#FFF6F8]/90 px-4 py-3 backdrop-blur">
               <button onClick={() => setNavOpen(true)} className="rounded-lg p-2 text-[#D6336C] hover:bg-black/5 md:hidden"><AppIcon name="menu" size={20} /></button>
-              <img src="./assets/logo-dark-text.png" alt="Cherrys Beauty Lounge" className="h-6 w-auto object-contain md:hidden" />
+              <BrandMark variant="dark" className="h-6 w-auto object-contain md:hidden" />
               <div className="ml-auto">
                 {currentUser.role === "admin" && (
                   <div className="relative">
@@ -659,7 +691,7 @@ function Dashboard({ customers, appointments, sales, expenses, custMap, staffMap
         <div className="flex flex-wrap items-center justify-between gap-6">
           <div>
             <div className="text-xs uppercase tracking-[0.2em] text-[#F5DBA0]">Welcome back</div>
-            <h2 className="cbl-heading mt-1 text-2xl sm:text-3xl">Cherrys Beauty Lounge</h2>
+            <h2 className="cbl-heading mt-1 text-2xl uppercase tracking-wide sm:text-3xl">Cherrys Beauty Lounge</h2>
             <div className="mt-1 text-sm text-white/70">{fmtDate(today)}</div>
           </div>
           <div className="flex flex-wrap gap-3">
@@ -1155,6 +1187,15 @@ function AppointmentsTab({ appointments, setAppointments, customers, setCustomer
     });
   }
 
+  function openEdit(a) {
+    setModal({
+      id: a.id,
+      date: a.date, time: a.time, staffId: a.staffId,
+      items: itemsOf(a).length ? itemsOf(a).map((it) => ({ name: it.name, price: it.price, priceTouched: true })) : [{ name: "", price: "" }],
+      customerId: a.customerId, newCustomerName: "", newCustomerMobile: "", notes: a.notes || "",
+    });
+  }
+
   function bookedSlotsFor(staffId, dt) {
     return new Set(appointments.filter(a => a.staffId === staffId && a.date === dt && a.status !== "Cancelled").map(a => a.time));
   }
@@ -1190,9 +1231,14 @@ function AppointmentsTab({ appointments, setAppointments, customers, setCustomer
     const items = modal.items.filter((it) => it.name.trim());
     if (items.length === 0) { alert("Add at least one service."); return; }
     const taken = bookedSlotsFor(modal.staffId, modal.date);
-    if (taken.has(modal.time)) { if (!window.confirm("This staff member already has an appointment at this time. Book anyway?")) return; }
-    setAppointments([...appointments, { id: uid(), date: modal.date, time: modal.time, staffId: modal.staffId, items, customerId, status: "Booked", notes: modal.notes }]);
-    sendFollowUpEmail(customerName, customerMobile, modal.date, modal.time, items.map((it) => it.name).join(", "));
+    if (!modal.id && taken.has(modal.time)) { if (!window.confirm("This staff member already has an appointment at this time. Book anyway?")) return; }
+
+    if (modal.id) {
+      setAppointments(appointments.map(a => a.id === modal.id ? { ...a, date: modal.date, time: modal.time, staffId: modal.staffId, items, customerId, notes: modal.notes } : a));
+    } else {
+      setAppointments([...appointments, { id: uid(), date: modal.date, time: modal.time, staffId: modal.staffId, items, customerId, status: "Booked", notes: modal.notes }]);
+      sendFollowUpEmail(customerName, customerMobile, modal.date, modal.time, items.map((it) => it.name).join(", "));
+    }
     setModal(null);
   }
 
@@ -1261,6 +1307,7 @@ function AppointmentsTab({ appointments, setAppointments, customers, setCustomer
                       <Td>
                         <div className="flex gap-1">
                           {a.status === "Booked" && <>
+                            <button title="Edit" onClick={() => openEdit(a)} className="rounded p-1.5 text-[#2B2320]/50 hover:bg-black/5"><AppIcon name="edit" size={14} /></button>
                             <button title="Mark completed" onClick={() => setStatus(a, "Completed")} className="rounded p-1.5 text-[#4E7C59] hover:bg-[#4E7C59]/10"><AppIcon name="check" size={14} /></button>
                             <button title="No show" onClick={() => setStatus(a, "No Show")} className="rounded p-1.5 text-[#C97B2E] hover:bg-[#C97B2E]/10"><AppIcon name="clock" size={14} /></button>
                             <button title="Cancel" onClick={() => setStatus(a, "Cancelled")} className="rounded p-1.5 text-[#B23A3A] hover:bg-[#B23A3A]/10"><AppIcon name="cancel" size={14} /></button>
@@ -1279,7 +1326,7 @@ function AppointmentsTab({ appointments, setAppointments, customers, setCustomer
       </div>
 
       {modal && (
-        <Modal title="Book Appointment" onClose={() => setModal(null)} wide>
+        <Modal title={modal.id ? "Edit Appointment" : "Book Appointment"} onClose={() => setModal(null)} wide>
           <form onSubmit={save}>
             <Field label="Customer" required>
               <CustomerPicker customers={customers} value={modal.customerId} onChange={(id) => setModal({ ...modal, customerId: id })} />
@@ -1341,10 +1388,12 @@ function AppointmentsTab({ appointments, setAppointments, customers, setCustomer
             </div>
 
             <Field label="Notes"><TextArea value={modal.notes} onChange={e => setModal({ ...modal, notes: e.target.value })} /></Field>
-            <div className="mb-3 rounded-lg bg-[#4E7C59]/10 px-3 py-2 text-xs text-[#4E7C59]">
-              A follow-up reminder email will be sent automatically for this appointment date, if email notifications are set up.
-            </div>
-            <Btn type="submit" className="w-full justify-center">Confirm Booking</Btn>
+            {!modal.id && (
+              <div className="mb-3 rounded-lg bg-[#4E7C59]/10 px-3 py-2 text-xs text-[#4E7C59]">
+                A follow-up reminder email will be sent automatically for this appointment date, if email notifications are set up.
+              </div>
+            )}
+            <Btn type="submit" className="w-full justify-center">{modal.id ? "Save Changes" : "Confirm Booking"}</Btn>
           </form>
         </Modal>
       )}
@@ -1850,7 +1899,7 @@ function PurchasesTab({ purchases, setPurchases, suppliers, suppMap, supplierPay
 
   function openPay() {
     if (suppliers.length === 0) { alert("Add a supplier first."); return; }
-    setPayModal({ supplierId: suppliers[0].id, date: todayStr(), amount: "", ref: "" });
+    setPayModal({ supplierId: suppliers[0].id, date: todayStr(), invoiceDate: todayStr(), amount: "", ref: "", mode: "Cash" });
   }
   function savePay(e) {
     e.preventDefault();
@@ -1899,13 +1948,15 @@ function PurchasesTab({ purchases, setPurchases, suppliers, suppMap, supplierPay
       ) : (
         <div className="cbl-card overflow-x-auto rounded-2xl bg-white shadow-sm">
           <table className="w-full">
-            <thead className="border-b border-[#fbe8ef]"><tr><Th>Date</Th><Th>Supplier</Th><Th>Amount</Th><Th>Reference</Th><Th></Th></tr></thead>
+            <thead className="border-b border-[#fbe8ef]"><tr><Th>Payment Date</Th><Th>Invoice Date</Th><Th>Supplier</Th><Th>Amount</Th><Th>Mode</Th><Th>Reference</Th><Th></Th></tr></thead>
             <tbody className="divide-y divide-[#fbe8ef]">
               {sortedPayments.map(p => (
                 <tr key={p.id} className="hover:bg-[#FFF6F8]">
                   <Td>{fmtDate(p.date)}</Td>
+                  <Td>{fmtDate(p.invoiceDate || p.date)}</Td>
                   <Td className="font-medium">{suppMap[p.supplierId]?.name || "—"}</Td>
                   <Td>{fmtMoney(p.amount)}</Td>
+                  <Td><Pill tone="gray">{p.mode || "—"}</Pill></Td>
                   <Td>{p.ref}</Td>
                   <Td><button onClick={() => delPay(p.id)} className="rounded p-1.5 text-[#B23A3A] hover:bg-[#B23A3A]/10"><AppIcon name="delete" size={14} /></button></Td>
                 </tr>
@@ -1943,8 +1994,16 @@ function PurchasesTab({ purchases, setPurchases, suppliers, suppMap, supplierPay
                 {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </Select>
             </Field>
-            <Field label="Date" required><TextInput type="date" value={payModal.date} onChange={e => setPayModal({ ...payModal, date: e.target.value })} required /></Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Payment Date" required><TextInput type="date" value={payModal.date} onChange={e => setPayModal({ ...payModal, date: e.target.value })} required /></Field>
+              <Field label="Invoice Date"><TextInput type="date" value={payModal.invoiceDate} onChange={e => setPayModal({ ...payModal, invoiceDate: e.target.value })} /></Field>
+            </div>
             <Field label="Amount (BHD)" required><TextInput type="number" step="0.001" value={payModal.amount} onChange={e => setPayModal({ ...payModal, amount: e.target.value })} required /></Field>
+            <Field label="Payment Mode" required>
+              <Select value={payModal.mode} onChange={e => setPayModal({ ...payModal, mode: e.target.value })}>
+                {PAYMENT_MODES.map(m => <option key={m} value={m}>{m}</option>)}
+              </Select>
+            </Field>
             <Field label="Reference / Invoice #"><TextInput value={payModal.ref} onChange={e => setPayModal({ ...payModal, ref: e.target.value })} /></Field>
             <Btn type="submit" className="w-full justify-center">Save Payment</Btn>
           </form>
@@ -2127,7 +2186,7 @@ function SalarySlipPrint({ slip, staffName, onClose }) {
     <Modal title="Salary Slip" onClose={onClose} wide>
       <div id="salary-slip-print" className="rounded-xl border border-[#f5d3e0] p-6">
         <div className="mb-4 text-center">
-          <img src="./assets/logo-dark-text.png" alt="Cherrys Beauty Lounge" className="mx-auto mb-2 h-9 w-auto object-contain" />
+          <BrandMark variant="dark" className="mx-auto mb-2 h-9 w-auto object-contain" />
           <div className="text-xs text-[#2B2320]/50">Salary Slip — {monthLabel(slip.month, slip.year)}</div>
         </div>
         <div className="mb-4 flex justify-between text-sm"><span>Employee</span><span className="font-medium">{staffName}</span></div>
@@ -2306,10 +2365,24 @@ function ReportsTab({ sales, expenses, custMap, suppliers, suppMap, purchases, s
     return [];
   }, [type, prefix, day, sales, expenses, supplierPayments]);
 
+  const combined = useMemo(() => {
+    const cSales = sales.filter(s => s.date === day);
+    const cExpenses = expenses.filter(e => e.date === day);
+    const cPayments = supplierPayments.filter(p => p.date === day);
+    const cPurchases = purchases.filter(p => (p.invoiceDate || p.date) === day);
+    return {
+      sales: cSales, expenses: cExpenses, payments: cPayments, purchases: cPurchases,
+      salesTotal: cSales.reduce((s, r) => s + Number(r.amount), 0),
+      expensesTotal: cExpenses.reduce((s, r) => s + Number(r.amount), 0),
+      paymentsTotal: cPayments.reduce((s, r) => s + Number(r.amount), 0),
+      purchasesTotal: cPurchases.reduce((s, r) => s + Number(r.amount), 0),
+    };
+  }, [sales, expenses, supplierPayments, purchases, day]);
+
   const total = reportRows.reduce((s, r) => s + Number(r.amount), 0);
   const titles = {
     dailyInvoice: "Daily Sales Report", sales: "Monthly Sales Report", expenses: "Monthly Expense Report",
-    credit: "Credit (Non-Paid) Report", supplierPayments: "Supplier Payments Report",
+    credit: "Credit (Non-Paid) Report", supplierPayments: "Supplier Payments Report", combined: "Combined Daily Report",
   };
 
   const modeTotals = type === "dailyInvoice"
@@ -2326,13 +2399,14 @@ function ReportsTab({ sales, expenses, custMap, suppliers, suppMap, purchases, s
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <Select value={type} onChange={e => setType(e.target.value)} className="w-auto">
           <option value="dailyInvoice">Daily Sales Report (invoice style)</option>
+          <option value="combined">Combined Daily Report (sales + expenses + payments + purchases)</option>
           <option value="sales">Monthly Sales Report</option>
           <option value="expenses">Monthly Expense Report</option>
           <option value="credit">Credit (Non-Paid) Report</option>
           <option value="supplierPayments">Supplier Payments Report</option>
         </Select>
-        {type === "dailyInvoice" && <TextInput type="date" value={day} onChange={e => setDay(e.target.value)} className="w-auto" />}
-        {type !== "credit" && type !== "dailyInvoice" && <>
+        {(type === "dailyInvoice" || type === "combined") && <TextInput type="date" value={day} onChange={e => setDay(e.target.value)} className="w-auto" />}
+        {type !== "credit" && type !== "dailyInvoice" && type !== "combined" && <>
           <Select value={month} onChange={e => setMonth(Number(e.target.value))} className="w-auto">
             {Array.from({ length: 12 }).map((_, i) => <option key={i} value={i}>{new Date(2000, i, 1).toLocaleDateString("en-GB", { month: "long" })}</option>)}
           </Select>
@@ -2341,10 +2415,63 @@ function ReportsTab({ sales, expenses, custMap, suppliers, suppMap, purchases, s
         <Btn onClick={() => window.print()}><AppIcon name="printer" size={16} /> Print</Btn>
       </div>
 
-      {type === "dailyInvoice" ? (
+      {type === "combined" ? (
+        <div id="report-print" className="cbl-card overflow-hidden rounded-2xl bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b-2 border-[#2B2320] p-5">
+            <BrandMark variant="dark" className="h-10 w-auto object-contain" />
+            <div className="text-right">
+              <div className="text-sm font-semibold text-[#2B2320]">Combined Daily Report</div>
+              <div className="text-xs text-[#2B2320]/50">{fmtDate(day)}</div>
+            </div>
+          </div>
+          <div className="p-5">
+            <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="rounded-xl bg-[#4E7C59]/10 p-3 text-center"><div className="text-[10px] uppercase text-[#2B2320]/50">Sales</div><div className="cbl-heading text-[#4E7C59]">{fmtMoney(combined.salesTotal)}</div></div>
+              <div className="rounded-xl bg-[#B23A3A]/10 p-3 text-center"><div className="text-[10px] uppercase text-[#2B2320]/50">Expenses</div><div className="cbl-heading text-[#B23A3A]">{fmtMoney(combined.expensesTotal)}</div></div>
+              <div className="rounded-xl bg-[#C97B2E]/10 p-3 text-center"><div className="text-[10px] uppercase text-[#2B2320]/50">Supplier Payments</div><div className="cbl-heading text-[#C97B2E]">{fmtMoney(combined.paymentsTotal)}</div></div>
+              <div className="rounded-xl bg-[#D6336C]/10 p-3 text-center"><div className="text-[10px] uppercase text-[#2B2320]/50">Purchases</div><div className="cbl-heading text-[#D6336C]">{fmtMoney(combined.purchasesTotal)}</div></div>
+            </div>
+
+            {[
+              { key: "sales", label: "Sales", rows: combined.sales, cols: (r) => [r.invoiceNo || "—", custMap[r.customerId]?.name || "—", r.description] },
+              { key: "expenses", label: "Expenses", rows: combined.expenses, cols: (r) => [r.category, r.notes || "—"] },
+              { key: "payments", label: "Supplier Payments", rows: combined.payments, cols: (r) => [suppMap[r.supplierId]?.name || "—", r.mode || "—", r.ref || "—"] },
+              { key: "purchases", label: "Purchases", rows: combined.purchases, cols: (r) => [suppMap[r.supplierId]?.name || "—", r.invoiceNumber || "—"] },
+            ].map((section) => (
+              <div key={section.key} className="mb-5">
+                <div className="mb-1.5 border-b border-[#2B2320]/20 pb-1 text-sm font-semibold text-[#2B2320]">{section.label}</div>
+                {section.rows.length === 0 ? (
+                  <div className="py-2 text-xs text-[#2B2320]/40">No {section.label.toLowerCase()} on this date.</div>
+                ) : (
+                  <table className="w-full text-xs">
+                    <tbody>
+                      {section.rows.map((r) => (
+                        <tr key={r.id} className="border-b border-[#fbe8ef]">
+                          {section.cols(r).map((c, i) => <td key={i} className="py-1.5">{c}</td>)}
+                          <td className="py-1.5 text-right font-medium">{fmtMoney(r.amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            ))}
+
+            <div className="mt-4 flex justify-end border-t-2 border-[#2B2320] pt-3 text-sm">
+              <div className="text-right">
+                <div>Net for the day: <span className="cbl-heading text-base">{fmtMoney(combined.salesTotal - combined.expensesTotal - combined.paymentsTotal - combined.purchasesTotal)}</span></div>
+              </div>
+            </div>
+            <div className="mt-4 text-center text-xs text-[#2B2320]/40">Printed on {fmtDate(todayStr())}</div>
+          </div>
+          <div className="bg-[#2B2320] px-5 py-3 text-center text-[10px] text-white/80">
+            {BUSINESS.cr} &nbsp;·&nbsp; Mobile {BUSINESS.phone} &nbsp;·&nbsp; {BUSINESS.email} &nbsp;·&nbsp; {BUSINESS.address}
+          </div>
+        </div>
+      ) : type === "dailyInvoice" ? (
         <div id="report-print" className="cbl-card overflow-hidden rounded-2xl bg-white shadow-sm">
           <div className="flex items-start justify-between border-b-2 border-[#2B2320] p-5">
-            <img src="./assets/logo-dark-text.png" alt="Cherrys Beauty Lounge" className="h-14 w-auto object-contain" />
+            <BrandMark variant="dark" className="h-14 w-auto object-contain" />
             <div className="rounded bg-[#2B2320] px-3 py-1.5 text-right text-sm font-medium text-white" dir="rtl">{BUSINESS.nameArabic}</div>
           </div>
           <div className="p-5">
@@ -2409,7 +2536,7 @@ function ReportsTab({ sales, expenses, custMap, suppliers, suppMap, purchases, s
       ) : (
         <div id="report-print" className="cbl-card overflow-hidden rounded-2xl bg-white shadow-sm">
           <div className="flex items-center justify-between border-b-2 border-[#2B2320] p-5">
-            <img src="./assets/logo-dark-text.png" alt="Cherrys Beauty Lounge" className="h-10 w-auto object-contain" />
+            <BrandMark variant="dark" className="h-10 w-auto object-contain" />
             <div className="text-right">
               <div className="text-sm font-semibold text-[#2B2320]">{titles[type]}</div>
               <div className="text-xs text-[#2B2320]/50">{type !== "credit" && monthLabel(month, year)}</div>
@@ -2551,7 +2678,8 @@ function LoginScreen({ onLogin }) {
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;500;600;700&display=swap');`}</style>
       <form onSubmit={submit} className="relative w-full max-w-sm rounded-[28px] bg-white/95 p-8 text-center shadow-2xl backdrop-blur">
         <div className="pointer-events-none absolute inset-3 rounded-[20px] border border-[#E8C888]/50"></div>
-        <img src="./assets/logo-dark-text.png" alt={APP_NAME} className="mx-auto mb-5 h-12 w-auto object-contain" />
+        <BrandMark variant="dark" className="mx-auto mb-2 h-12 w-auto object-contain" />
+        <div className="cbl-heading mb-5 text-sm uppercase tracking-[0.15em] text-[#2B2320]">Cherrys Beauty Lounge</div>
         <div className="mx-auto mb-5 h-px w-16 bg-gradient-to-r from-transparent via-[#D6336C] to-transparent"></div>
         <p className="mb-6 text-xs uppercase tracking-[0.2em] text-[#2B2320]/40" style={{ fontFamily: "'Playfair Display', serif" }}>Staff Sign In</p>
 
