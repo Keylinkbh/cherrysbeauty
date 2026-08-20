@@ -29,7 +29,7 @@ export const INVOICE_PREFIX = "CBL1923";
 // ─────────────────────────────────────────────────────────────
 export const STAFF_USERS = [
   { username: "sadaque", pin: "1234", role: "admin", name: "Sadaque" },
-  { username: "staff1", pin: "1111", role: "staff", name: "Staff 1" },
-  { username: "staff2", pin: "2222", role: "staff", name: "Staff 2" },
-  { username: "staff3", pin: "3333", role: "staff", name: "Staff 3" },
+  { username: "Maria", pin: "3559", role: "staff", name: "Staff 1" },
+  { username: "Eman", pin: "9553", role: "staff", name: "Staff 2" },
+  { username: "Blanche", pin: "5935", role: "staff", name: "Staff 3" },
 ];
