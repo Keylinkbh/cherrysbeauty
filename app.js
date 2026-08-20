@@ -1076,6 +1076,60 @@ function generateSlots() {
 }
 const SLOTS = generateSlots();
 
+function MiniCalendar({ appointmentsByDate, selectedDate, onSelect }) {
+  const [viewDate, setViewDate] = useState(() => new Date(selectedDate + "T00:00:00"));
+
+  const year = viewDate.getFullYear();
+  const month = viewDate.getMonth();
+  const startWeekday = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells = [...Array(startWeekday).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)];
+  const weekdayLabels = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+
+  function dateStrFor(d) { return `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`; }
+  function changeMonth(delta) { setViewDate(new Date(year, month + delta, 1)); }
+  function jumpToday() { const t = new Date(); setViewDate(new Date(t.getFullYear(), t.getMonth(), 1)); onSelect(todayStr()); }
+
+  return (
+    <div className="cbl-card rounded-2xl bg-white p-4 shadow-sm">
+      <div className="mb-3 flex items-center justify-between">
+        <button type="button" onClick={() => changeMonth(-1)} className="rounded-lg px-2 py-1 text-[#2B2320]/50 hover:bg-black/5">‹</button>
+        <button type="button" onClick={jumpToday} className="cbl-heading text-sm text-[#2B2320] hover:text-[#D6336C]">
+          {viewDate.toLocaleDateString("en-GB", { month: "long", year: "numeric" })}
+        </button>
+        <button type="button" onClick={() => changeMonth(1)} className="rounded-lg px-2 py-1 text-[#2B2320]/50 hover:bg-black/5">›</button>
+      </div>
+      <div className="mb-1 grid grid-cols-7 gap-1 text-center text-[10px] font-medium text-[#2B2320]/40">
+        {weekdayLabels.map(w => <div key={w}>{w}</div>)}
+      </div>
+      <div className="grid grid-cols-7 gap-1">
+        {cells.map((d, i) => {
+          if (d === null) return <div key={i} />;
+          const ds = dateStrFor(d);
+          const count = appointmentsByDate[ds] || 0;
+          const isSelected = ds === selectedDate;
+          const isToday = ds === todayStr();
+          return (
+            <button
+              type="button"
+              key={i}
+              onClick={() => onSelect(ds)}
+              title={count > 0 ? `${count} appointment${count === 1 ? "" : "s"}` : "No appointments"}
+              className={`relative aspect-square rounded-lg text-xs font-medium transition ${isSelected ? "ring-2 ring-[#D6336C] ring-offset-1" : ""} ${count > 0 ? "bg-[#4E7C59] text-white hover:bg-[#3f6349]" : "bg-[#FFF6F8] text-[#2B2320]/70 hover:bg-[#fbe8ef]"} ${isToday && count === 0 ? "border border-[#D6336C] text-[#D6336C]" : ""}`}
+            >
+              {d}
+            </button>
+          );
+        })}
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-3 text-[10px] text-[#2B2320]/50">
+        <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded bg-[#4E7C59]"></span>Has appointments</span>
+        <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded border border-[#D6336C]"></span>Today</span>
+      </div>
+    </div>
+  );
+}
+
 function AppointmentsTab({ appointments, setAppointments, customers, setCustomers, staff, services, custMap, staffMap, svcMap, setTab, setSales, currentUser }) {
   const [date, setDate] = useState(todayStr());
   const [modal, setModal] = useState(null);
@@ -1083,6 +1137,15 @@ function AppointmentsTab({ appointments, setAppointments, customers, setCustomer
   const dayAppts = appointments.filter(a => a.date === date).sort((a, b) => a.time.localeCompare(b.time));
   const itemsOf = (a) => a.items && a.items.length ? a.items : (a.serviceId && svcMap[a.serviceId] ? [{ name: svcMap[a.serviceId].name, price: svcMap[a.serviceId].price }] : []);
   const totalOf = (a) => itemsOf(a).reduce((sum, it) => sum + Number(it.price || 0), 0);
+
+  const appointmentsByDate = useMemo(() => {
+    const map = {};
+    appointments.forEach((a) => {
+      if (a.status === "Cancelled") return;
+      map[a.date] = (map[a.date] || 0) + 1;
+    });
+    return map;
+  }, [appointments]);
 
   function openAdd() {
     setModal({
@@ -1165,49 +1228,55 @@ function AppointmentsTab({ appointments, setAppointments, customers, setCustomer
         action={<Btn onClick={openAdd}><AppIcon name="add" size={16} /> Book Appointment</Btn>}
       />
 
-      <div className="mb-4 flex items-center gap-2">
-        <label className="text-sm text-[#2B2320]/60">Date</label>
-        <TextInput type="date" value={date} onChange={e => setDate(e.target.value)} className="w-auto" />
-        <Btn variant="outline" size="sm" onClick={() => setDate(todayStr())}>Today</Btn>
-      </div>
+      <div className="grid gap-5 lg:grid-cols-[300px_1fr]">
+        <MiniCalendar appointmentsByDate={appointmentsByDate} selectedDate={date} onSelect={setDate} />
 
-      {staff.length === 0 && <div className="mb-4 rounded-lg bg-[#C97B2E]/10 px-3 py-2 text-sm text-[#C97B2E]">Add staff members first (Staff & Salary tab) so customers can choose who serves them.</div>}
+        <div>
+          <div className="mb-4 flex items-center gap-2">
+            <label className="text-sm text-[#2B2320]/60">Showing</label>
+            <span className="cbl-heading text-base text-[#2B2320]">{fmtDate(date)}</span>
+            <Btn variant="outline" size="sm" onClick={() => setDate(todayStr())}>Today</Btn>
+          </div>
 
-      {dayAppts.length === 0 ? (
-        <Empty icon="calendar" text={`No appointments on ${fmtDate(date)}.`} action={<Btn onClick={openAdd} className="mt-3"><AppIcon name="add" size={14} /> Book Appointment</Btn>} />
-      ) : (
-        <div className="cbl-card overflow-x-auto rounded-2xl bg-white shadow-sm">
-          <table className="w-full">
-            <thead className="border-b border-[#fbe8ef]"><tr>
-              <Th>Time</Th><Th>Customer</Th><Th>Mobile</Th><Th>Service(s)</Th><Th>Total</Th><Th>Staff</Th><Th>Status</Th><Th></Th>
-            </tr></thead>
-            <tbody className="divide-y divide-[#fbe8ef]">
-              {dayAppts.map(a => (
-                <tr key={a.id} className="hover:bg-[#FFF6F8]">
-                  <Td className="font-medium">{a.time}</Td>
-                  <Td>{custMap[a.customerId]?.name || "—"}</Td>
-                  <Td>{custMap[a.customerId]?.mobile}</Td>
-                  <Td>{itemsOf(a).map((it) => it.name).join(", ")}</Td>
-                  <Td>{fmtMoney(totalOf(a))}</Td>
-                  <Td>{staffMap[a.staffId]?.name}</Td>
-                  <Td><Pill tone={a.status === "Completed" ? "green" : a.status === "Cancelled" || a.status === "No Show" ? "red" : "rose"}>{a.status}</Pill></Td>
-                  <Td>
-                    <div className="flex gap-1">
-                      {a.status === "Booked" && <>
-                        <button title="Mark completed" onClick={() => setStatus(a, "Completed")} className="rounded p-1.5 text-[#4E7C59] hover:bg-[#4E7C59]/10"><AppIcon name="check" size={14} /></button>
-                        <button title="No show" onClick={() => setStatus(a, "No Show")} className="rounded p-1.5 text-[#C97B2E] hover:bg-[#C97B2E]/10"><AppIcon name="clock" size={14} /></button>
-                        <button title="Cancel" onClick={() => setStatus(a, "Cancelled")} className="rounded p-1.5 text-[#B23A3A] hover:bg-[#B23A3A]/10"><AppIcon name="cancel" size={14} /></button>
-                      </>}
-                      {a.status === "Completed" && <Btn size="sm" variant="outline" onClick={() => convertToSale(a)}>Add to Sales</Btn>}
-                      <button onClick={() => del(a.id)} className="rounded p-1.5 text-[#B23A3A] hover:bg-[#B23A3A]/10"><AppIcon name="delete" size={14} /></button>
-                    </div>
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          {staff.length === 0 && <div className="mb-4 rounded-lg bg-[#C97B2E]/10 px-3 py-2 text-sm text-[#C97B2E]">Add staff members first (Staff & Salary tab) so customers can choose who serves them.</div>}
+
+          {dayAppts.length === 0 ? (
+            <Empty icon="calendar" text={`No appointments on ${fmtDate(date)}.`} action={<Btn onClick={openAdd} className="mt-3"><AppIcon name="add" size={14} /> Book Appointment</Btn>} />
+          ) : (
+            <div className="cbl-card overflow-x-auto rounded-2xl bg-white shadow-sm">
+              <table className="w-full">
+                <thead className="border-b border-[#fbe8ef]"><tr>
+                  <Th>Time</Th><Th>Customer</Th><Th>Mobile</Th><Th>Service(s)</Th><Th>Total</Th><Th>Staff</Th><Th>Status</Th><Th></Th>
+                </tr></thead>
+                <tbody className="divide-y divide-[#fbe8ef]">
+                  {dayAppts.map(a => (
+                    <tr key={a.id} className="hover:bg-[#FFF6F8]">
+                      <Td className="font-medium">{a.time}</Td>
+                      <Td>{custMap[a.customerId]?.name || "—"}</Td>
+                      <Td>{custMap[a.customerId]?.mobile}</Td>
+                      <Td>{itemsOf(a).map((it) => it.name).join(", ")}</Td>
+                      <Td>{fmtMoney(totalOf(a))}</Td>
+                      <Td>{staffMap[a.staffId]?.name}</Td>
+                      <Td><Pill tone={a.status === "Completed" ? "green" : a.status === "Cancelled" || a.status === "No Show" ? "red" : "rose"}>{a.status}</Pill></Td>
+                      <Td>
+                        <div className="flex gap-1">
+                          {a.status === "Booked" && <>
+                            <button title="Mark completed" onClick={() => setStatus(a, "Completed")} className="rounded p-1.5 text-[#4E7C59] hover:bg-[#4E7C59]/10"><AppIcon name="check" size={14} /></button>
+                            <button title="No show" onClick={() => setStatus(a, "No Show")} className="rounded p-1.5 text-[#C97B2E] hover:bg-[#C97B2E]/10"><AppIcon name="clock" size={14} /></button>
+                            <button title="Cancel" onClick={() => setStatus(a, "Cancelled")} className="rounded p-1.5 text-[#B23A3A] hover:bg-[#B23A3A]/10"><AppIcon name="cancel" size={14} /></button>
+                          </>}
+                          {a.status === "Completed" && <Btn size="sm" variant="outline" onClick={() => convertToSale(a)}>Add to Sales</Btn>}
+                          <button onClick={() => del(a.id)} className="rounded p-1.5 text-[#B23A3A] hover:bg-[#B23A3A]/10"><AppIcon name="delete" size={14} /></button>
+                        </div>
+                      </Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       {modal && (
         <Modal title="Book Appointment" onClose={() => setModal(null)} wide>
