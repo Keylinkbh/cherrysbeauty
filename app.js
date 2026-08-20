@@ -1,0 +1,1704 @@
+import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { createRoot } from "react-dom/client";
+import { createClient } from "@supabase/supabase-js";
+import { SUPABASE_URL, SUPABASE_ANON_KEY, APP_PIN, APP_NAME } from "./config.js";
+
+/* ------------------------------------------------------------------ */
+/* Constants                                                          */
+/* ------------------------------------------------------------------ */
+
+const PAYMENT_MODES = ["Cash", "Benefit Pay", "Bank Transfer", "Scan to Pay"];
+const EXPENSE_CATEGORIES = [
+  "Shop Rent", "Electricity Bill", "LMRA Monthly Fees", "Visa Fees",
+  "Visa Renewal Fees", "License Renewal", "Staff Salary",
+  "Customer Snacks", "Product Purchase", "Other"
+];
+const GOV_CATEGORIES = ["LMRA Monthly Fees", "Visa Fees", "Visa Renewal Fees", "License Renewal"];
+const APPT_STATUS = ["Booked", "Completed", "Cancelled", "No Show"];
+const NAV = [
+  { key: "dashboard", label: "Dashboard", icon: "dashboard" },
+  { key: "customers", label: "Customers", icon: "users" },
+  { key: "appointments", label: "Appointments", icon: "calendar" },
+  { key: "sales", label: "Sales & Payments", icon: "wallet" },
+  { key: "credit", label: "Credit (Unpaid)", icon: "credit" },
+  { key: "expenses", label: "Expenses & Bills", icon: "receipt" },
+  { key: "suppliers", label: "Suppliers", icon: "truck" },
+  { key: "purchases", label: "Product Purchases", icon: "package" },
+  { key: "staff", label: "Staff & Salary", icon: "staff" },
+  { key: "loans", label: "Loans (Sadaque)", icon: "handcoins" },
+  { key: "reports", label: "Reports", icon: "file" },
+  { key: "whatsapp", label: "WhatsApp Offers", icon: "whatsapp" },
+];
+
+const ENTITIES = {
+  customers: "customers", staff: "staff", services: "services",
+  appointments: "appointments", sales: "sales", expenses: "expenses",
+  suppliers: "suppliers", purchases: "purchases",
+  supplierPayments: "supplier_payments", loans: "loans",
+  salarySlips: "salary_slips",
+};
+
+const DEFAULT_SERVICES = [
+  { id: "svc1", name: "Hair Cut", price: 5, duration: 30 },
+  { id: "svc2", name: "Hair Color", price: 15, duration: 90 },
+  { id: "svc3", name: "Facial", price: 10, duration: 45 },
+  { id: "svc4", name: "Manicure", price: 6, duration: 30 },
+  { id: "svc5", name: "Pedicure", price: 7, duration: 40 },
+  { id: "svc6", name: "Threading", price: 2, duration: 15 },
+];
+
+/* ------------------------------------------------------------------ */
+/* Helpers                                                            */
+/* ------------------------------------------------------------------ */
+
+const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+const todayStr = () => new Date().toISOString().slice(0, 10);
+const fmtDate = (d) => {
+  if (!d) return "—";
+  const dt = new Date(d + "T00:00:00");
+  if (isNaN(dt)) return d;
+  return dt.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+};
+const fmtMoney = (n) => `BHD ${Number(n || 0).toFixed(3)}`;
+const monthLabel = (m, y) => new Date(y, m, 1).toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+const daysBetween = (a, b) => Math.floor((new Date(b) - new Date(a)) / 86400000);
+const waNumber = (mobile) => {
+  let n = (mobile || "").replace(/[^0-9]/g, "");
+  if (n.length === 8) n = "973" + n;
+  return n;
+};
+const waLink = (mobile, text) => `https://wa.me/${waNumber(mobile)}?text=${encodeURIComponent(text)}`;
+
+/* ------------------------------------------------------------------ */
+/* Supabase-backed persistent list hook                               */
+/* Mirrors the old [data, setData, loaded] API so every screen below  */
+/* works unchanged, but now reads/writes a shared Supabase table and  */
+/* stays in sync in real time across every device that opens the app. */
+/* ------------------------------------------------------------------ */
+
+async function syncDiff(supabase, entity, prevList, nextList) {
+  const prevMap = Object.fromEntries(prevList.map((x) => [x.id, x]));
+  const nextMap = Object.fromEntries(nextList.map((x) => [x.id, x]));
+  const inserts = nextList.filter((x) => !prevMap[x.id]);
+  const updates = nextList.filter(
+    (x) => prevMap[x.id] && JSON.stringify(prevMap[x.id]) !== JSON.stringify(x)
+  );
+  const deletes = prevList.filter((x) => !nextMap[x.id]);
+
+  for (const item of inserts) {
+    await supabase.from("records").insert({ id: item.id, entity, data: item });
+  }
+  for (const item of updates) {
+    await supabase.from("records").update({ data: item, updated_at: new Date().toISOString() }).eq("id", item.id);
+  }
+  for (const item of deletes) {
+    await supabase.from("records").delete().eq("id", item.id);
+  }
+}
+
+function useSupabaseList(supabase, entity, seedData) {
+  const [data, setDataState] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+
+    (async () => {
+      const { data: rows, error } = await supabase
+        .from("records")
+        .select("*")
+        .eq("entity", entity)
+        .order("created_at", { ascending: true });
+
+      if (!active) return;
+
+      if (error) {
+        console.error("Load failed for", entity, error);
+        setLoaded(true);
+        return;
+      }
+
+      if (rows && rows.length > 0) {
+        setDataState(rows.map((r) => r.data));
+      } else if (seedData && seedData.length) {
+        for (const item of seedData) {
+          await supabase.from("records").insert({ id: item.id, entity, data: item });
+        }
+        if (active) setDataState(seedData);
+      }
+      if (active) setLoaded(true);
+    })();
+
+    const channel = supabase
+      .channel(`records-${entity}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "records", filter: `entity=eq.${entity}` },
+        (payload) => {
+          setDataState((prev) => {
+            if (payload.eventType === "DELETE") {
+              return prev.filter((x) => x.id !== payload.old.id);
+            }
+            const incoming = payload.new.data;
+            const exists = prev.some((x) => x.id === incoming.id);
+            if (exists) return prev.map((x) => (x.id === incoming.id ? incoming : x));
+            return [...prev, incoming];
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      active = false;
+      supabase.removeChannel(channel);
+    };
+  }, [entity]);
+
+  const setData = useCallback(
+    (updater) => {
+      setDataState((prev) => {
+        const next = typeof updater === "function" ? updater(prev) : updater;
+        syncDiff(supabase, entity, prev, next);
+        return next;
+      });
+    },
+    [entity]
+  );
+
+  return [data, setData, loaded];
+}
+
+/* ------------------------------------------------------------------ */
+/* Small shared UI                                                    */
+/* ------------------------------------------------------------------ */
+
+/* ------------------------------------------------------------------ */
+/* Icons (emoji-based, zero external dependency)                      */
+/* ------------------------------------------------------------------ */
+
+const ICONS = {
+  dashboard: "📊", users: "👥", calendar: "📅", wallet: "💰", credit: "💳",
+  receipt: "🧾", truck: "🚚", package: "📦", staff: "🧑‍💼", file: "📄",
+  handcoins: "🤝", printer: "🖨️", whatsapp: "💬", add: "➕", edit: "✏️",
+  delete: "🗑️", close: "✖️", search: "🔍", phone: "📞", check: "✅",
+  cancel: "❌", clock: "⏰", up: "📈", down: "📉", warning: "⚠️",
+  sparkle: "✨", menu: "☰", cash: "💵", chevron: "▶️", star: "⭐",
+};
+
+function AppIcon({ name, size = 16, className = "" }) {
+  return (
+    <span
+      className={className}
+      style={{ fontSize: size, lineHeight: 1, display: "inline-block", verticalAlign: "middle" }}
+    >
+      {ICONS[name] || "•"}
+    </span>
+  );
+}
+
+function Modal({ title, onClose, children, wide }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:p-8" onClick={onClose}>
+      <div
+        className={`cbl-card mt-4 w-full ${wide ? "max-w-2xl" : "max-w-md"} rounded-2xl bg-white p-5 shadow-xl`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="cbl-heading text-lg text-[#2B2320]">{title}</h3>
+          <button onClick={onClose} className="rounded-full p-1 text-[#2B2320]/50 hover:bg-black/5">
+            <AppIcon name="close" size={18} />
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, children, required }) {
+  return (
+    <label className="mb-3 block text-sm">
+      <span className="mb-1 block font-medium text-[#2B2320]/80">
+        {label}{required && <span className="text-[#D6336C]"> *</span>}
+      </span>
+      {children}
+    </label>
+  );
+}
+
+const inputCls = "w-full rounded-lg border border-[#f5d3e0] bg-[#FFF6F8] px-3 py-2 text-sm text-[#2B2320] outline-none focus:border-[#D6336C] focus:ring-1 focus:ring-[#D6336C]";
+
+function TextInput({ className = "", ...props }) { return <input {...props} className={`${inputCls} ${className}`} />; }
+function Select({ children, className = "", ...props }) { return <select {...props} className={`${inputCls} ${className}`}>{children}</select>; }
+function TextArea({ className = "", ...props }) { return <textarea {...props} className={`${inputCls} min-h-[70px] ${className}`} />; }
+
+function Btn({ children, onClick, variant = "primary", type = "button", size = "md", className = "" }) {
+  const base = "inline-flex items-center gap-1.5 rounded-lg font-medium transition active:scale-[0.98]";
+  const sizes = size === "sm" ? "px-2.5 py-1.5 text-xs" : "px-4 py-2 text-sm";
+  const variants = {
+    primary: "text-white",
+    ghost: "bg-transparent text-[#D6336C] hover:bg-[#D6336C]/10",
+    danger: "bg-[#B23A3A]/10 text-[#B23A3A] hover:bg-[#B23A3A]/20",
+    outline: "border border-[#D6336C]/30 text-[#D6336C] hover:bg-[#D6336C]/5",
+  };
+  const style = variant === "primary" ? { background: "linear-gradient(135deg,#D6336C,#A61E5C)" } : {};
+  return (
+    <button type={type} onClick={onClick} style={style} className={`${base} ${sizes} ${variants[variant]} ${className}`}>
+      {children}
+    </button>
+  );
+}
+
+function Empty({ icon, text, action }) {
+  return (
+    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-[#f5d3e0] py-14 text-center">
+      <AppIcon name={icon} size={28} className="mb-2 text-[#D6336C]/40" />
+      <p className="text-sm text-[#2B2320]/50">{text}</p>
+      {action}
+    </div>
+  );
+}
+
+function StatCard({ label, value, icon, tone = "rose", sub }) {
+  const tones = {
+    rose: "from-[#D6336C] to-[#A61E5C]",
+    gold: "from-[#C9A15A] to-[#A9803D]",
+    green: "from-[#4E7C59] to-[#3A5E43]",
+    amber: "from-[#C97B2E] to-[#A5621F]",
+    red: "from-[#B23A3A] to-[#8E2C2C]",
+  };
+  return (
+    <div className="cbl-card relative overflow-hidden rounded-2xl bg-white p-4 shadow-sm">
+      <div className={`absolute -right-4 -top-4 h-16 w-16 rounded-full bg-gradient-to-br ${tones[tone]} opacity-10`} />
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-xs font-medium uppercase tracking-wide text-[#2B2320]/45">{label}</span>
+        <div className={`rounded-lg bg-gradient-to-br ${tones[tone]} p-1.5 text-white`}><AppIcon name={icon} size={14} /></div>
+      </div>
+      <div className="cbl-heading text-xl text-[#2B2320]">{value}</div>
+      {sub && <div className="mt-0.5 text-xs text-[#2B2320]/45">{sub}</div>}
+    </div>
+  );
+}
+
+function Th({ children, ...rest }) { return <th {...rest} className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-[#2B2320]/50">{children}</th>; }
+function Td({ children, className = "", ...rest }) { return <td {...rest} className={`whitespace-nowrap px-3 py-2 text-sm text-[#2B2320]/85 ${className}`}>{children}</td>; }
+
+function Pill({ children, tone = "gray" }) {
+  const tones = {
+    gray: "bg-black/5 text-[#2B2320]/60",
+    green: "bg-[#4E7C59]/10 text-[#4E7C59]",
+    red: "bg-[#B23A3A]/10 text-[#B23A3A]",
+    amber: "bg-[#C97B2E]/10 text-[#C97B2E]",
+    rose: "bg-[#D6336C]/10 text-[#D6336C]",
+  };
+  return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${tones[tone]}`}>{children}</span>;
+}
+
+function SectionHeader({ title, desc, action }) {
+  return (
+    <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <h2 className="cbl-heading text-2xl text-[#2B2320]">{title}</h2>
+        {desc && <p className="mt-0.5 text-sm text-[#2B2320]/50">{desc}</p>}
+      </div>
+      {action}
+    </div>
+  );
+}
+
+function confirmDelete(msg) { return window.confirm(msg || "Delete this record? This cannot be undone."); }
+
+/* ================================================================== */
+/* MAIN APP                                                            */
+/* ================================================================== */
+
+export default function App({ supabase }) {
+  const [navOpen, setNavOpen] = useState(false);
+  const [tab, setTab] = useState("dashboard");
+
+  const [customers, setCustomers, lCust] = useSupabaseList(supabase, ENTITIES.customers, []);
+  const [staff, setStaff, lStaff] = useSupabaseList(supabase, ENTITIES.staff, []);
+  const [services, setServices, lServ] = useSupabaseList(supabase, ENTITIES.services, DEFAULT_SERVICES);
+  const [appointments, setAppointments, lAppt] = useSupabaseList(supabase, ENTITIES.appointments, []);
+  const [sales, setSales, lSales] = useSupabaseList(supabase, ENTITIES.sales, []);
+  const [expenses, setExpenses, lExp] = useSupabaseList(supabase, ENTITIES.expenses, []);
+  const [suppliers, setSuppliers, lSupp] = useSupabaseList(supabase, ENTITIES.suppliers, []);
+  const [purchases, setPurchases, lPurch] = useSupabaseList(supabase, ENTITIES.purchases, []);
+  const [supplierPayments, setSupplierPayments, lSp] = useSupabaseList(supabase, ENTITIES.supplierPayments, []);
+  const [loans, setLoans, lLoans] = useSupabaseList(supabase, ENTITIES.loans, []);
+  const [salarySlips, setSalarySlips, lSlips] = useSupabaseList(supabase, ENTITIES.salarySlips, []);
+
+  const allLoaded = lCust && lStaff && lServ && lAppt && lSales && lExp && lSupp && lPurch && lSp && lLoans && lSlips;
+
+  const custMap = useMemo(() => Object.fromEntries(customers.map(c => [c.id, c])), [customers]);
+  const staffMap = useMemo(() => Object.fromEntries(staff.map(s => [s.id, s])), [staff]);
+  const svcMap = useMemo(() => Object.fromEntries(services.map(s => [s.id, s])), [services]);
+  const suppMap = useMemo(() => Object.fromEntries(suppliers.map(s => [s.id, s])), [suppliers]);
+
+  // customer visit stats: derived from completed appointments + sales
+  const customerStats = useMemo(() => {
+    const map = {};
+    customers.forEach(c => { map[c.id] = { visits: 0, lastVisit: null, nextAppt: null }; });
+    appointments.forEach(a => {
+      if (!map[a.customerId]) return;
+      if (a.status === "Completed") {
+        map[a.customerId].visits += 1;
+        if (!map[a.customerId].lastVisit || a.date > map[a.customerId].lastVisit) map[a.customerId].lastVisit = a.date;
+      }
+      if (a.status === "Booked" && a.date >= todayStr()) {
+        const cur = map[a.customerId].nextAppt;
+        if (!cur || a.date < cur.date || (a.date === cur.date && a.time < cur.time)) map[a.customerId].nextAppt = a;
+      }
+    });
+    sales.forEach(s => {
+      if (!map[s.customerId]) return;
+      if (!map[s.customerId].lastVisit || s.date > map[s.customerId].lastVisit) map[s.customerId].lastVisit = s.date;
+    });
+    return map;
+  }, [customers, appointments, sales]);
+
+  const nav = allLoaded ? tab : "loading";
+
+  return (
+    <div className="cbl-root min-h-screen w-full" style={{ background: "radial-gradient(1200px 600px at 100% -10%, #FDEFF4 0%, transparent 60%), radial-gradient(900px 500px at -10% 10%, #FCE9F1 0%, transparent 55%), #FFF9FA" }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;500;600;700&display=swap');
+        .cbl-root { font-family: 'Inter', sans-serif; }
+        .cbl-heading { font-family: 'Playfair Display', serif; }
+        .cbl-card { border: 1px solid #f6e1ea; box-shadow: 0 1px 2px rgba(214,51,108,0.04); }
+        @media print {
+          .no-print { display: none !important; }
+          .print-area { display: block !important; }
+          body { background: white; }
+        }
+        .print-area { display: none; }
+      `}</style>
+
+      {!allLoaded ? (
+        <div className="flex h-screen items-center justify-center">
+          <div className="flex items-center gap-2 text-[#D6336C]"><AppIcon name="sparkle" className="animate-pulse" size={20} /> Loading Cherrys Beauty Lounge…</div>
+        </div>
+      ) : (
+        <div className="flex">
+          {/* Sidebar */}
+          <aside className={`no-print fixed z-40 h-screen w-64 shrink-0 overflow-y-auto bg-gradient-to-b from-[#E0447C] via-[#B0225F] to-[#5C1140] text-white transition-transform md:static md:translate-x-0 ${navOpen ? "translate-x-0" : "-translate-x-full"}`}>
+            <div className="flex items-center gap-2 border-b border-white/10 px-5 py-5">
+              <div className="rounded-full bg-[#E8C888]/25 p-2"><AppIcon name="sparkle" size={18} className="text-[#F5DBA0]" /></div>
+              <div>
+                <div className="cbl-heading text-lg leading-tight">Cherrys</div>
+                <div className="text-[10px] uppercase tracking-[0.2em] text-[#E8C888]">Beauty Lounge</div>
+              </div>
+            </div>
+            <nav className="px-3 py-4">
+              {NAV.map(item => {
+                const active = tab === item.key;
+                return (
+                  <button
+                    key={item.key}
+                    onClick={() => { setTab(item.key); setNavOpen(false); }}
+                    className={`mb-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition ${active ? "bg-white/15 font-semibold text-white" : "text-white/70 hover:bg-white/8 hover:text-white"}`}
+                  >
+                    <AppIcon name={item.icon} size={16} />{item.label}
+                  </button>
+                );
+              })}
+            </nav>
+          </aside>
+          {navOpen && <div className="no-print fixed inset-0 z-30 bg-black/40 md:hidden" onClick={() => setNavOpen(false)} />}
+
+          {/* Main */}
+          <main className="min-h-screen w-full flex-1 md:ml-0">
+            <div className="no-print sticky top-0 z-20 flex items-center gap-3 border-b border-[#efe6e0] bg-[#FFF6F8]/90 px-4 py-3 backdrop-blur md:hidden">
+              <button onClick={() => setNavOpen(true)} className="rounded-lg p-2 text-[#D6336C] hover:bg-black/5"><AppIcon name="menu" size={20} /></button>
+              <div className="cbl-heading text-base text-[#2B2320]">Cherrys Beauty Lounge</div>
+            </div>
+
+            <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
+              {tab === "dashboard" && <Dashboard {...{ customers, appointments, sales, expenses, custMap, staffMap, svcMap, customerStats, setTab }} />}
+              {tab === "customers" && <CustomersTab {...{ customers, setCustomers, customerStats, staff }} />}
+              {tab === "appointments" && <AppointmentsTab {...{ appointments, setAppointments, customers, setCustomers, staff, services, custMap, staffMap, svcMap, setTab, setSales }} />}
+              {tab === "sales" && <SalesTab {...{ sales, setSales, customers, setCustomers, staff, services, custMap, staffMap, svcMap }} />}
+              {tab === "credit" && <CreditTab {...{ sales, setSales, custMap }} />}
+              {tab === "expenses" && <ExpensesTab {...{ expenses, setExpenses }} />}
+              {tab === "suppliers" && <SuppliersTab {...{ suppliers, setSuppliers, purchases, supplierPayments, setTab }} />}
+              {tab === "purchases" && <PurchasesTab {...{ purchases, setPurchases, suppliers, suppMap, supplierPayments, setSupplierPayments }} />}
+              {tab === "staff" && <StaffTab {...{ staff, setStaff, salarySlips, setSalarySlips }} />}
+              {tab === "loans" && <LoansTab {...{ loans, setLoans }} />}
+              {tab === "reports" && <ReportsTab {...{ sales, expenses, custMap, suppliers, suppMap, purchases, supplierPayments, staff, salarySlips }} />}
+              {tab === "whatsapp" && <WhatsAppTab {...{ customers, customerStats }} />}
+            </div>
+          </main>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ================================================================== */
+/* DASHBOARD                                                           */
+/* ================================================================== */
+
+function Dashboard({ customers, appointments, sales, expenses, custMap, staffMap, svcMap, customerStats, setTab }) {
+  const today = todayStr();
+  const now = new Date();
+  const monthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+  const todaysAppts = appointments.filter(a => a.date === today).sort((a, b) => a.time.localeCompare(b.time));
+  const monthRevenue = sales.filter(s => s.date.startsWith(monthPrefix)).reduce((sum, s) => sum + Number(s.amount), 0);
+  const monthExpenses = expenses.filter(e => e.date.startsWith(monthPrefix)).reduce((sum, e) => sum + Number(e.amount), 0);
+  const outstandingCredit = sales.filter(s => !s.paid).reduce((sum, s) => sum + Number(s.amount), 0);
+
+  const regulars = customers.filter(c => (customerStats[c.id]?.visits || 0) >= 3);
+  const inactive = customers.filter(c => {
+    const lv = customerStats[c.id]?.lastVisit;
+    if (!lv) return false; // never-visited customers are shown separately below
+    return daysBetween(lv, today) >= 30;
+  });
+  const neverVisited = customers.filter(c => !customerStats[c.id]?.lastVisit);
+
+  return (
+    <div>
+      <SectionHeader title="Dashboard" desc={`Today, ${fmtDate(today)}`} />
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        <StatCard label="Total Customers" value={customers.length} icon="users" tone="rose" />
+        <StatCard label="Regular Customers" value={regulars.length} icon="star" tone="gold" sub="3+ visits" />
+        <StatCard label="Not Coming Back" value={inactive.length} icon="warning" tone="amber" sub="30+ days inactive" />
+        <StatCard label="Today's Appointments" value={todaysAppts.length} icon="calendar" tone="rose" />
+        <StatCard label="This Month Sales" value={fmtMoney(monthRevenue)} icon="up" tone="green" />
+        <StatCard label="This Month Expenses" value={fmtMoney(monthExpenses)} icon="down" tone="red" />
+        <StatCard label="Net This Month" value={fmtMoney(monthRevenue - monthExpenses)} icon="cash" tone={monthRevenue - monthExpenses >= 0 ? "green" : "red"} />
+        <StatCard label="Outstanding Credit" value={fmtMoney(outstandingCredit)} icon="credit" tone="amber" />
+      </div>
+
+      <div className="mt-6 grid gap-5 lg:grid-cols-2">
+        <div className="cbl-card rounded-2xl bg-white p-4 shadow-sm">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="cbl-heading text-base text-[#2B2320]">Today's Appointments</h3>
+            <button onClick={() => setTab("appointments")} className="flex items-center text-xs font-medium text-[#D6336C]">View all <AppIcon name="chevron" size={14} /></button>
+          </div>
+          {todaysAppts.length === 0 ? (
+            <Empty icon="calendar" text="No appointments booked for today." />
+          ) : (
+            <div className="divide-y divide-[#fbe8ef]">
+              {todaysAppts.map(a => (
+                <div key={a.id} className="flex items-center justify-between py-2 text-sm">
+                  <div>
+                    <div className="font-medium text-[#2B2320]">{a.time} — {custMap[a.customerId]?.name || "Walk-in"}</div>
+                    <div className="text-xs text-[#2B2320]/50">{svcMap[a.serviceId]?.name} with {staffMap[a.staffId]?.name}</div>
+                  </div>
+                  <Pill tone={a.status === "Completed" ? "green" : a.status === "Cancelled" || a.status === "No Show" ? "red" : "rose"}>{a.status}</Pill>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="cbl-card rounded-2xl bg-white p-4 shadow-sm">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="cbl-heading text-base text-[#2B2320]">Customers to Win Back</h3>
+            <button onClick={() => setTab("whatsapp")} className="flex items-center text-xs font-medium text-[#D6336C]">Send offer <AppIcon name="chevron" size={14} /></button>
+          </div>
+          {inactive.length === 0 ? (
+            <Empty icon="star" text="Everyone's visiting regularly — nice work!" />
+          ) : (
+            <div className="divide-y divide-[#fbe8ef]">
+              {inactive.slice(0, 8).map(c => (
+                <div key={c.id} className="flex items-center justify-between py-2 text-sm">
+                  <div>
+                    <div className="font-medium text-[#2B2320]">{c.name}</div>
+                    <div className="text-xs text-[#2B2320]/50">Last visit {fmtDate(customerStats[c.id]?.lastVisit)}</div>
+                  </div>
+                  <a href={waLink(c.mobile, `Hi ${c.name}, we miss you at Cherrys Beauty Lounge! Come visit us soon for a special treat 💇‍♀️✨`)} target="_blank" rel="noreferrer" className="rounded-full bg-[#4E7C59]/10 p-2 text-[#4E7C59] hover:bg-[#4E7C59]/20">
+                    <AppIcon name="whatsapp" size={14} />
+                  </a>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {neverVisited.length > 0 && (
+        <div className="mt-5 cbl-card rounded-2xl bg-white p-4 shadow-sm">
+          <h3 className="cbl-heading mb-3 text-base text-[#2B2320]">New Customers, No Visit Yet</h3>
+          <div className="flex flex-wrap gap-2">
+            {neverVisited.slice(0, 12).map(c => <Pill key={c.id} tone="gray">{c.name}</Pill>)}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ================================================================== */
+/* CUSTOMERS                                                           */
+/* ================================================================== */
+
+function CustomersTab({ customers, setCustomers, customerStats, staff }) {
+  const [modal, setModal] = useState(null); // {mode, data}
+  const [search, setSearch] = useState("");
+  const [detailId, setDetailId] = useState(null);
+
+  const filtered = customers.filter(c =>
+    c.name.toLowerCase().includes(search.toLowerCase()) || (c.mobile || "").includes(search)
+  );
+
+  function openAdd() { setModal({ mode: "add", data: { name: "", mobile: "", tags: "", notes: "" } }); }
+  function openEdit(c) { setModal({ mode: "edit", data: { ...c } }); }
+
+  function save(e) {
+    e.preventDefault();
+    const d = modal.data;
+    if (!d.name || !d.mobile) return;
+    if (modal.mode === "add") {
+      setCustomers([...customers, { ...d, id: uid(), createdAt: todayStr(), log: [] }]);
+    } else {
+      setCustomers(customers.map(c => c.id === d.id ? d : c));
+    }
+    setModal(null);
+  }
+
+  function del(id) {
+    if (!confirmDelete("Delete this customer? Their appointment/sales history will remain but unlinked.")) return;
+    setCustomers(customers.filter(c => c.id !== id));
+  }
+
+  const detail = detailId ? customers.find(c => c.id === detailId) : null;
+
+  return (
+    <div>
+      <SectionHeader
+        title="Customers"
+        desc={`${customers.length} total`}
+        action={<Btn onClick={openAdd}><AppIcon name="add" size={16} /> Add Customer</Btn>}
+      />
+
+      <div className="mb-4 flex items-center gap-2 rounded-lg border border-[#f5d3e0] bg-white px-3 py-2">
+        <AppIcon name="search" size={16} className="text-[#2B2320]/40" />
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or mobile…" className="w-full bg-transparent text-sm outline-none" />
+      </div>
+
+      {filtered.length === 0 ? (
+        <Empty icon="users" text="No customers yet. Add your first customer to get started." action={<Btn onClick={openAdd} className="mt-3"><AppIcon name="add" size={14} /> Add Customer</Btn>} />
+      ) : (
+        <div className="cbl-card overflow-x-auto rounded-2xl bg-white shadow-sm">
+          <table className="w-full">
+            <thead className="border-b border-[#fbe8ef]"><tr>
+              <Th>Name</Th><Th>Mobile</Th><Th>Tags</Th><Th>Visits</Th><Th>Last Visit</Th><Th>Next Appt.</Th><Th></Th>
+            </tr></thead>
+            <tbody className="divide-y divide-[#fbe8ef]">
+              {filtered.map(c => {
+                const st = customerStats[c.id] || {};
+                return (
+                  <tr key={c.id} className="hover:bg-[#FFF6F8] cursor-pointer" onClick={() => setDetailId(c.id)}>
+                    <Td className="font-medium text-[#2B2320]">{c.name}</Td>
+                    <Td>{c.mobile}</Td>
+                    <Td>{c.tags ? c.tags.split(",").map((t, i) => <Pill key={i} tone="rose">{t.trim()}</Pill>) : "—"}</Td>
+                    <Td>{st.visits || 0}</Td>
+                    <Td>{st.lastVisit ? fmtDate(st.lastVisit) : "Never"}</Td>
+                    <Td>{st.nextAppt ? `${fmtDate(st.nextAppt.date)} ${st.nextAppt.time}` : "—"}</Td>
+                    <Td onClick={e => e.stopPropagation()}>
+                      <div className="flex gap-1">
+                        <a href={waLink(c.mobile, `Hi ${c.name}, this is Cherrys Beauty Lounge!`)} target="_blank" rel="noreferrer" className="rounded p-1.5 text-[#4E7C59] hover:bg-[#4E7C59]/10"><AppIcon name="whatsapp" size={14} /></a>
+                        <button onClick={() => openEdit(c)} className="rounded p-1.5 text-[#2B2320]/50 hover:bg-black/5"><AppIcon name="edit" size={14} /></button>
+                        <button onClick={() => del(c.id)} className="rounded p-1.5 text-[#B23A3A] hover:bg-[#B23A3A]/10"><AppIcon name="delete" size={14} /></button>
+                      </div>
+                    </Td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {modal && (
+        <Modal title={modal.mode === "add" ? "Add Customer" : "Edit Customer"} onClose={() => setModal(null)}>
+          <form onSubmit={save}>
+            <Field label="Name" required><TextInput value={modal.data.name} onChange={e => setModal({ ...modal, data: { ...modal.data, name: e.target.value } })} required /></Field>
+            <Field label="Mobile Number" required><TextInput value={modal.data.mobile} onChange={e => setModal({ ...modal, data: { ...modal.data, mobile: e.target.value } })} placeholder="e.g. 33123456" required /></Field>
+            <Field label="Tags (comma separated)"><TextInput value={modal.data.tags} onChange={e => setModal({ ...modal, data: { ...modal.data, tags: e.target.value } })} placeholder="VIP, Bridal, Colour client" /></Field>
+            <Field label="Notes"><TextArea value={modal.data.notes} onChange={e => setModal({ ...modal, data: { ...modal.data, notes: e.target.value } })} /></Field>
+            <Btn type="submit" className="w-full justify-center">Save Customer</Btn>
+          </form>
+        </Modal>
+      )}
+
+      {detail && <CustomerDetail customer={detail} onClose={() => setDetailId(null)} onSave={(d) => setCustomers(customers.map(c => c.id === d.id ? d : c))} stats={customerStats[detail.id]} />}
+    </div>
+  );
+}
+
+function CustomerDetail({ customer, onClose, onSave, stats }) {
+  const [note, setNote] = useState("");
+  const log = customer.log || [];
+
+  function addNote() {
+    if (!note.trim()) return;
+    const entry = { date: new Date().toISOString(), text: note.trim() };
+    onSave({ ...customer, log: [entry, ...log] });
+    setNote("");
+  }
+
+  return (
+    <Modal title={customer.name} onClose={onClose} wide>
+      <div className="mb-4 grid grid-cols-3 gap-3 text-center">
+        <div className="rounded-lg bg-[#FFF6F8] p-2"><div className="cbl-heading text-lg">{stats?.visits || 0}</div><div className="text-[10px] uppercase text-[#2B2320]/45">Visits</div></div>
+        <div className="rounded-lg bg-[#FFF6F8] p-2"><div className="cbl-heading text-sm">{stats?.lastVisit ? fmtDate(stats.lastVisit) : "Never"}</div><div className="text-[10px] uppercase text-[#2B2320]/45">Last Visit</div></div>
+        <div className="rounded-lg bg-[#FFF6F8] p-2"><div className="cbl-heading text-sm">{stats?.nextAppt ? fmtDate(stats.nextAppt.date) : "—"}</div><div className="text-[10px] uppercase text-[#2B2320]/45">Next Appt.</div></div>
+      </div>
+      <div className="mb-2 flex items-center gap-2 text-sm text-[#2B2320]/70"><AppIcon name="phone" size={14} /> {customer.mobile}
+        <a href={waLink(customer.mobile, `Hi ${customer.name}, this is Cherrys Beauty Lounge!`)} target="_blank" rel="noreferrer" className="ml-auto rounded-full bg-[#4E7C59]/10 px-3 py-1 text-xs font-medium text-[#4E7C59]">Message on WhatsApp</a>
+      </div>
+      {customer.notes && <p className="mb-3 rounded-lg bg-[#FFF6F8] p-2 text-sm text-[#2B2320]/70">{customer.notes}</p>}
+
+      <h4 className="cbl-heading mb-2 text-sm text-[#2B2320]">Conversation / Visit Notes</h4>
+      <div className="mb-2 flex gap-2">
+        <TextInput value={note} onChange={e => setNote(e.target.value)} placeholder="Log a note, call, or WhatsApp chat summary…" />
+        <Btn onClick={addNote}>Add</Btn>
+      </div>
+      <div className="max-h-40 space-y-2 overflow-y-auto">
+        {log.length === 0 && <p className="text-xs text-[#2B2320]/40">No notes logged yet.</p>}
+        {log.map((l, i) => (
+          <div key={i} className="rounded-lg bg-[#FFF6F8] p-2 text-xs">
+            <div className="text-[#2B2320]/40">{new Date(l.date).toLocaleString()}</div>
+            <div className="text-[#2B2320]/80">{l.text}</div>
+          </div>
+        ))}
+      </div>
+    </Modal>
+  );
+}
+
+/* ================================================================== */
+/* APPOINTMENTS                                                        */
+/* ================================================================== */
+
+function generateSlots() {
+  const slots = [];
+  for (let h = 10; h <= 20; h++) {
+    for (let m = 0; m < 60; m += 30) {
+      if (h === 20 && m > 0) continue;
+      slots.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
+    }
+  }
+  return slots;
+}
+const SLOTS = generateSlots();
+
+function AppointmentsTab({ appointments, setAppointments, customers, setCustomers, staff, services, custMap, staffMap, svcMap, setTab, setSales }) {
+  const [date, setDate] = useState(todayStr());
+  const [modal, setModal] = useState(null);
+
+  const dayAppts = appointments.filter(a => a.date === date).sort((a, b) => a.time.localeCompare(b.time));
+
+  function openAdd() {
+    setModal({
+      date, time: SLOTS[0], staffId: staff[0]?.id || "", serviceId: services[0]?.id || "",
+      customerId: "", newCustomerName: "", newCustomerMobile: "", notes: "",
+    });
+  }
+
+  function bookedSlotsFor(staffId, dt) {
+    return new Set(appointments.filter(a => a.staffId === staffId && a.date === dt && a.status !== "Cancelled").map(a => a.time));
+  }
+
+  function save(e) {
+    e.preventDefault();
+    let customerId = modal.customerId;
+    let updatedCustomers = customers;
+    if (!customerId) {
+      if (!modal.newCustomerName || !modal.newCustomerMobile) { alert("Select an existing customer or enter a new customer's name & mobile."); return; }
+      const nc = { id: uid(), name: modal.newCustomerName, mobile: modal.newCustomerMobile, tags: "", notes: "", createdAt: todayStr(), log: [] };
+      updatedCustomers = [...customers, nc];
+      setCustomers(updatedCustomers);
+      customerId = nc.id;
+    }
+    const taken = bookedSlotsFor(modal.staffId, modal.date);
+    if (taken.has(modal.time)) { if (!window.confirm("This staff member already has an appointment at this time. Book anyway?")) return; }
+    setAppointments([...appointments, { id: uid(), date: modal.date, time: modal.time, staffId: modal.staffId, serviceId: modal.serviceId, customerId, status: "Booked", notes: modal.notes }]);
+    setModal(null);
+  }
+
+  function setStatus(a, status) {
+    setAppointments(appointments.map(x => x.id === a.id ? { ...x, status } : x));
+  }
+
+  function del(id) {
+    if (!confirmDelete("Delete this appointment?")) return;
+    setAppointments(appointments.filter(a => a.id !== id));
+  }
+
+  function convertToSale(a) {
+    const svc = svcMap[a.serviceId];
+    setSales(prev => [...prev, { id: uid(), date: a.date, customerId: a.customerId, staffId: a.staffId, description: svc?.name || "Service", amount: svc?.price || 0, paymentMode: "Cash", paid: true }]);
+    setTab("sales");
+  }
+
+  return (
+    <div>
+      <SectionHeader
+        title="Appointments"
+        desc="Slot-wise booking by service and staff"
+        action={<Btn onClick={openAdd}><AppIcon name="add" size={16} /> Book Appointment</Btn>}
+      />
+
+      <div className="mb-4 flex items-center gap-2">
+        <label className="text-sm text-[#2B2320]/60">Date</label>
+        <TextInput type="date" value={date} onChange={e => setDate(e.target.value)} className="w-auto" />
+        <Btn variant="outline" size="sm" onClick={() => setDate(todayStr())}>Today</Btn>
+      </div>
+
+      {staff.length === 0 && <div className="mb-4 rounded-lg bg-[#C97B2E]/10 px-3 py-2 text-sm text-[#C97B2E]">Add staff members first (Staff & Salary tab) so customers can choose who serves them.</div>}
+
+      {dayAppts.length === 0 ? (
+        <Empty icon="calendar" text={`No appointments on ${fmtDate(date)}.`} action={<Btn onClick={openAdd} className="mt-3"><AppIcon name="add" size={14} /> Book Appointment</Btn>} />
+      ) : (
+        <div className="cbl-card overflow-x-auto rounded-2xl bg-white shadow-sm">
+          <table className="w-full">
+            <thead className="border-b border-[#fbe8ef]"><tr>
+              <Th>Time</Th><Th>Customer</Th><Th>Mobile</Th><Th>Service</Th><Th>Staff</Th><Th>Status</Th><Th></Th>
+            </tr></thead>
+            <tbody className="divide-y divide-[#fbe8ef]">
+              {dayAppts.map(a => (
+                <tr key={a.id} className="hover:bg-[#FFF6F8]">
+                  <Td className="font-medium">{a.time}</Td>
+                  <Td>{custMap[a.customerId]?.name || "—"}</Td>
+                  <Td>{custMap[a.customerId]?.mobile}</Td>
+                  <Td>{svcMap[a.serviceId]?.name}</Td>
+                  <Td>{staffMap[a.staffId]?.name}</Td>
+                  <Td><Pill tone={a.status === "Completed" ? "green" : a.status === "Cancelled" || a.status === "No Show" ? "red" : "rose"}>{a.status}</Pill></Td>
+                  <Td>
+                    <div className="flex gap-1">
+                      {a.status === "Booked" && <>
+                        <button title="Mark completed" onClick={() => setStatus(a, "Completed")} className="rounded p-1.5 text-[#4E7C59] hover:bg-[#4E7C59]/10"><AppIcon name="check" size={14} /></button>
+                        <button title="No show" onClick={() => setStatus(a, "No Show")} className="rounded p-1.5 text-[#C97B2E] hover:bg-[#C97B2E]/10"><AppIcon name="clock" size={14} /></button>
+                        <button title="Cancel" onClick={() => setStatus(a, "Cancelled")} className="rounded p-1.5 text-[#B23A3A] hover:bg-[#B23A3A]/10"><AppIcon name="cancel" size={14} /></button>
+                      </>}
+                      {a.status === "Completed" && <Btn size="sm" variant="outline" onClick={() => convertToSale(a)}>Add to Sales</Btn>}
+                      <button onClick={() => del(a.id)} className="rounded p-1.5 text-[#B23A3A] hover:bg-[#B23A3A]/10"><AppIcon name="delete" size={14} /></button>
+                    </div>
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {modal && (
+        <Modal title="Book Appointment" onClose={() => setModal(null)} wide>
+          <form onSubmit={save}>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Date" required><TextInput type="date" value={modal.date} onChange={e => setModal({ ...modal, date: e.target.value })} required /></Field>
+              <Field label="Time Slot" required>
+                <Select value={modal.time} onChange={e => setModal({ ...modal, time: e.target.value })}>
+                  {SLOTS.map(s => {
+                    const taken = bookedSlotsFor(modal.staffId, modal.date).has(s);
+                    return <option key={s} value={s}>{s}{taken ? " (busy)" : ""}</option>;
+                  })}
+                </Select>
+              </Field>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Staff (customer's choice)" required>
+                <Select value={modal.staffId} onChange={e => setModal({ ...modal, staffId: e.target.value })} required>
+                  <option value="">Select staff</option>
+                  {staff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </Select>
+              </Field>
+              <Field label="Service" required>
+                <Select value={modal.serviceId} onChange={e => setModal({ ...modal, serviceId: e.target.value })} required>
+                  {services.map(s => <option key={s.id} value={s.id}>{s.name} — {fmtMoney(s.price)}</option>)}
+                </Select>
+              </Field>
+            </div>
+            <Field label="Existing Customer">
+              <Select value={modal.customerId} onChange={e => setModal({ ...modal, customerId: e.target.value })}>
+                <option value="">— New customer instead —</option>
+                {customers.map(c => <option key={c.id} value={c.id}>{c.name} ({c.mobile})</option>)}
+              </Select>
+            </Field>
+            {!modal.customerId && (
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="New Customer Name"><TextInput value={modal.newCustomerName} onChange={e => setModal({ ...modal, newCustomerName: e.target.value })} /></Field>
+                <Field label="New Customer Mobile"><TextInput value={modal.newCustomerMobile} onChange={e => setModal({ ...modal, newCustomerMobile: e.target.value })} /></Field>
+              </div>
+            )}
+            <Field label="Notes"><TextArea value={modal.notes} onChange={e => setModal({ ...modal, notes: e.target.value })} /></Field>
+            <Btn type="submit" className="w-full justify-center">Confirm Booking</Btn>
+          </form>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+/* ================================================================== */
+/* SALES                                                                */
+/* ================================================================== */
+
+function SalesTab({ sales, setSales, customers, setCustomers, staff, services, custMap, staffMap, svcMap }) {
+  const [modal, setModal] = useState(null);
+  const [filterMode, setFilterMode] = useState("All");
+
+  function openAdd() {
+    setModal({ date: todayStr(), customerId: customers[0]?.id || "", staffId: staff[0]?.id || "", description: services[0]?.name || "", amount: services[0]?.price || "", paymentMode: "Cash", paid: true });
+  }
+
+  function save(e) {
+    e.preventDefault();
+    if (!modal.customerId || !modal.amount) return;
+    setSales([...sales, { id: uid(), date: modal.date, customerId: modal.customerId, staffId: modal.staffId, description: modal.description, amount: Number(modal.amount), paymentMode: modal.paymentMode, paid: modal.paid }]);
+    setModal(null);
+  }
+
+  function del(id) { if (confirmDelete("Delete this sale record?")) setSales(sales.filter(s => s.id !== id)); }
+
+  const filtered = filterMode === "All" ? sales : sales.filter(s => s.paymentMode === filterMode);
+  const sorted = [...filtered].sort((a, b) => b.date.localeCompare(a.date));
+  const total = filtered.reduce((sum, s) => sum + Number(s.amount), 0);
+  const byMode = PAYMENT_MODES.map(m => ({ mode: m, total: sales.filter(s => s.paymentMode === m).reduce((sum, s) => sum + Number(s.amount), 0) }));
+
+  return (
+    <div>
+      <SectionHeader title="Sales & Payments" desc="Every service sold and how it was paid" action={<Btn onClick={openAdd}><AppIcon name="add" size={16} /> Record Sale</Btn>} />
+
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {byMode.map(b => <StatCard key={b.mode} label={b.mode} value={fmtMoney(b.total)} icon="wallet" tone="rose" />)}
+      </div>
+
+      <div className="mb-3 flex flex-wrap gap-2">
+        {["All", ...PAYMENT_MODES].map(m => (
+          <button key={m} onClick={() => setFilterMode(m)} className={`rounded-full px-3 py-1 text-xs font-medium ${filterMode === m ? "bg-[#D6336C] text-white" : "bg-white text-[#2B2320]/60 border border-[#f5d3e0]"}`}>{m}</button>
+        ))}
+      </div>
+
+      {sorted.length === 0 ? (
+        <Empty icon="wallet" text="No sales recorded yet." action={<Btn onClick={openAdd} className="mt-3"><AppIcon name="add" size={14} /> Record Sale</Btn>} />
+      ) : (
+        <div className="cbl-card overflow-x-auto rounded-2xl bg-white shadow-sm">
+          <table className="w-full">
+            <thead className="border-b border-[#fbe8ef]"><tr>
+              <Th>Date</Th><Th>Customer</Th><Th>Service</Th><Th>Staff</Th><Th>Amount</Th><Th>Payment</Th><Th>Status</Th><Th></Th>
+            </tr></thead>
+            <tbody className="divide-y divide-[#fbe8ef]">
+              {sorted.map(s => (
+                <tr key={s.id} className="hover:bg-[#FFF6F8]">
+                  <Td>{fmtDate(s.date)}</Td>
+                  <Td className="font-medium">{custMap[s.customerId]?.name || "—"}</Td>
+                  <Td>{s.description}</Td>
+                  <Td>{staffMap[s.staffId]?.name || "—"}</Td>
+                  <Td>{fmtMoney(s.amount)}</Td>
+                  <Td><Pill tone="gray">{s.paymentMode}</Pill></Td>
+                  <Td><Pill tone={s.paid ? "green" : "amber"}>{s.paid ? "Paid" : "Credit"}</Pill></Td>
+                  <Td><button onClick={() => del(s.id)} className="rounded p-1.5 text-[#B23A3A] hover:bg-[#B23A3A]/10"><AppIcon name="delete" size={14} /></button></Td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot><tr className="border-t border-[#fbe8ef] font-semibold"><Td colSpan={4}>Total</Td><Td>{fmtMoney(total)}</Td><Td /><Td /><Td /></tr></tfoot>
+          </table>
+        </div>
+      )}
+
+      {modal && (
+        <Modal title="Record Sale" onClose={() => setModal(null)}>
+          <form onSubmit={save}>
+            <Field label="Date" required><TextInput type="date" value={modal.date} onChange={e => setModal({ ...modal, date: e.target.value })} required /></Field>
+            <Field label="Customer" required>
+              <Select value={modal.customerId} onChange={e => setModal({ ...modal, customerId: e.target.value })} required>
+                <option value="">Select customer</option>
+                {customers.map(c => <option key={c.id} value={c.id}>{c.name} ({c.mobile})</option>)}
+              </Select>
+            </Field>
+            <Field label="Staff">
+              <Select value={modal.staffId} onChange={e => setModal({ ...modal, staffId: e.target.value })}>
+                <option value="">—</option>
+                {staff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </Select>
+            </Field>
+            <Field label="Service / Description" required><TextInput value={modal.description} onChange={e => setModal({ ...modal, description: e.target.value })} required /></Field>
+            <Field label="Amount (BHD)" required><TextInput type="number" step="0.001" value={modal.amount} onChange={e => setModal({ ...modal, amount: e.target.value })} required /></Field>
+            <Field label="Payment Mode" required>
+              <Select value={modal.paymentMode} onChange={e => setModal({ ...modal, paymentMode: e.target.value })}>
+                {PAYMENT_MODES.map(m => <option key={m} value={m}>{m}</option>)}
+              </Select>
+            </Field>
+            <Field label="">
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={modal.paid} onChange={e => setModal({ ...modal, paid: e.target.checked })} />
+                Paid in full now (uncheck to record as credit / unpaid)
+              </label>
+            </Field>
+            <Btn type="submit" className="w-full justify-center">Save Sale</Btn>
+          </form>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+/* ================================================================== */
+/* CREDIT                                                               */
+/* ================================================================== */
+
+function CreditTab({ sales, setSales, custMap }) {
+  const unpaid = sales.filter(s => !s.paid).sort((a, b) => a.date.localeCompare(b.date));
+  const total = unpaid.reduce((sum, s) => sum + Number(s.amount), 0);
+
+  function markPaid(s, mode) {
+    setSales(sales.map(x => x.id === s.id ? { ...x, paid: true, paymentMode: mode } : x));
+  }
+
+  return (
+    <div>
+      <SectionHeader title="Credit (Unpaid) Record" desc={`Outstanding: ${fmtMoney(total)} across ${unpaid.length} customer(s)`} />
+      {unpaid.length === 0 ? (
+        <Empty icon="credit" text="No outstanding credit. Everyone's paid up!" />
+      ) : (
+        <div className="cbl-card overflow-x-auto rounded-2xl bg-white shadow-sm">
+          <table className="w-full">
+            <thead className="border-b border-[#fbe8ef]"><tr><Th>Date</Th><Th>Customer</Th><Th>Mobile</Th><Th>Service</Th><Th>Amount</Th><Th>Days Outstanding</Th><Th></Th></tr></thead>
+            <tbody className="divide-y divide-[#fbe8ef]">
+              {unpaid.map(s => (
+                <tr key={s.id} className="hover:bg-[#FFF6F8]">
+                  <Td>{fmtDate(s.date)}</Td>
+                  <Td className="font-medium">{custMap[s.customerId]?.name}</Td>
+                  <Td>{custMap[s.customerId]?.mobile}</Td>
+                  <Td>{s.description}</Td>
+                  <Td>{fmtMoney(s.amount)}</Td>
+                  <Td><Pill tone={daysBetween(s.date, todayStr()) > 14 ? "red" : "amber"}>{daysBetween(s.date, todayStr())} days</Pill></Td>
+                  <Td>
+                    <Select onChange={e => { if (e.target.value) markPaid(s, e.target.value); }} defaultValue="">
+                      <option value="" disabled>Mark paid via…</option>
+                      {PAYMENT_MODES.map(m => <option key={m} value={m}>{m}</option>)}
+                    </Select>
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ================================================================== */
+/* EXPENSES                                                             */
+/* ================================================================== */
+
+function ExpensesTab({ expenses, setExpenses }) {
+  const [modal, setModal] = useState(null);
+  const [filter, setFilter] = useState("All");
+
+  function openAdd() { setModal({ date: todayStr(), category: EXPENSE_CATEGORIES[0], amount: "", notes: "" }); }
+  function save(e) {
+    e.preventDefault();
+    if (!modal.amount) return;
+    setExpenses([...expenses, { id: uid(), date: modal.date, category: modal.category, amount: Number(modal.amount), notes: modal.notes }]);
+    setModal(null);
+  }
+  function del(id) { if (confirmDelete("Delete this expense?")) setExpenses(expenses.filter(x => x.id !== id)); }
+
+  const filtered = filter === "All" ? expenses : filter === "Government & Bills" ? expenses.filter(e => GOV_CATEGORIES.includes(e.category) || e.category === "Shop Rent" || e.category === "Electricity Bill") : expenses.filter(e => e.category === filter);
+  const sorted = [...filtered].sort((a, b) => b.date.localeCompare(a.date));
+  const total = sorted.reduce((sum, e) => sum + Number(e.amount), 0);
+
+  return (
+    <div>
+      <SectionHeader title="Expenses & Bills" desc="Rent, electricity, government fees, salaries, snacks & more" action={<Btn onClick={openAdd}><AppIcon name="add" size={16} /> Add Expense</Btn>} />
+
+      <div className="mb-3 flex flex-wrap gap-2">
+        {["All", "Government & Bills", ...EXPENSE_CATEGORIES].map(c => (
+          <button key={c} onClick={() => setFilter(c)} className={`rounded-full px-3 py-1 text-xs font-medium ${filter === c ? "bg-[#D6336C] text-white" : "bg-white text-[#2B2320]/60 border border-[#f5d3e0]"}`}>{c}</button>
+        ))}
+      </div>
+
+      {sorted.length === 0 ? (
+        <Empty icon="receipt" text="No expenses recorded for this filter." action={<Btn onClick={openAdd} className="mt-3"><AppIcon name="add" size={14} /> Add Expense</Btn>} />
+      ) : (
+        <div className="cbl-card overflow-x-auto rounded-2xl bg-white shadow-sm">
+          <table className="w-full">
+            <thead className="border-b border-[#fbe8ef]"><tr><Th>Date</Th><Th>Category</Th><Th>Amount</Th><Th>Notes</Th><Th></Th></tr></thead>
+            <tbody className="divide-y divide-[#fbe8ef]">
+              {sorted.map(e => (
+                <tr key={e.id} className="hover:bg-[#FFF6F8]">
+                  <Td>{fmtDate(e.date)}</Td>
+                  <Td><Pill tone={GOV_CATEGORIES.includes(e.category) ? "amber" : "gray"}>{e.category}</Pill></Td>
+                  <Td>{fmtMoney(e.amount)}</Td>
+                  <Td className="max-w-xs truncate">{e.notes}</Td>
+                  <Td><button onClick={() => del(e.id)} className="rounded p-1.5 text-[#B23A3A] hover:bg-[#B23A3A]/10"><AppIcon name="delete" size={14} /></button></Td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot><tr className="border-t border-[#fbe8ef] font-semibold"><Td>Total</Td><Td /><Td>{fmtMoney(total)}</Td><Td /><Td /></tr></tfoot>
+          </table>
+        </div>
+      )}
+
+      {modal && (
+        <Modal title="Add Expense" onClose={() => setModal(null)}>
+          <form onSubmit={save}>
+            <Field label="Date" required><TextInput type="date" value={modal.date} onChange={e => setModal({ ...modal, date: e.target.value })} required /></Field>
+            <Field label="Category" required>
+              <Select value={modal.category} onChange={e => setModal({ ...modal, category: e.target.value })}>
+                {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </Select>
+            </Field>
+            <Field label="Amount (BHD)" required><TextInput type="number" step="0.001" value={modal.amount} onChange={e => setModal({ ...modal, amount: e.target.value })} required /></Field>
+            <Field label="Notes"><TextArea value={modal.notes} onChange={e => setModal({ ...modal, notes: e.target.value })} /></Field>
+            <Btn type="submit" className="w-full justify-center">Save Expense</Btn>
+          </form>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+/* ================================================================== */
+/* SUPPLIERS                                                            */
+/* ================================================================== */
+
+function SuppliersTab({ suppliers, setSuppliers, purchases, supplierPayments, setTab }) {
+  const [modal, setModal] = useState(null);
+  function openAdd() { setModal({ name: "", phone: "", address: "" }); }
+  function save(e) {
+    e.preventDefault();
+    if (!modal.name) return;
+    if (modal.id) setSuppliers(suppliers.map(s => s.id === modal.id ? modal : s));
+    else setSuppliers([...suppliers, { ...modal, id: uid() }]);
+    setModal(null);
+  }
+  function del(id) { if (confirmDelete("Delete this supplier?")) setSuppliers(suppliers.filter(s => s.id !== id)); }
+
+  function balanceFor(id) {
+    const bought = purchases.filter(p => p.supplierId === id).reduce((s, p) => s + Number(p.amount), 0);
+    const paid = supplierPayments.filter(p => p.supplierId === id).reduce((s, p) => s + Number(p.amount), 0);
+    return bought - paid;
+  }
+
+  return (
+    <div>
+      <SectionHeader title="Suppliers" desc="Add suppliers here first, before recording purchases" action={<Btn onClick={openAdd}><AppIcon name="add" size={16} /> Add Supplier</Btn>} />
+      {suppliers.length === 0 ? (
+        <Empty icon="truck" text="No suppliers added yet. Add a supplier before recording product purchases." action={<Btn onClick={openAdd} className="mt-3"><AppIcon name="add" size={14} /> Add Supplier</Btn>} />
+      ) : (
+        <div className="cbl-card overflow-x-auto rounded-2xl bg-white shadow-sm">
+          <table className="w-full">
+            <thead className="border-b border-[#fbe8ef]"><tr><Th>Name</Th><Th>Phone</Th><Th>Address</Th><Th>Balance Owed</Th><Th></Th></tr></thead>
+            <tbody className="divide-y divide-[#fbe8ef]">
+              {suppliers.map(s => (
+                <tr key={s.id} className="hover:bg-[#FFF6F8]">
+                  <Td className="font-medium">{s.name}</Td>
+                  <Td>{s.phone}</Td>
+                  <Td>{s.address}</Td>
+                  <Td><Pill tone={balanceFor(s.id) > 0 ? "amber" : "green"}>{fmtMoney(balanceFor(s.id))}</Pill></Td>
+                  <Td>
+                    <div className="flex gap-1">
+                      <button onClick={() => setModal(s)} className="rounded p-1.5 text-[#2B2320]/50 hover:bg-black/5"><AppIcon name="edit" size={14} /></button>
+                      <button onClick={() => del(s.id)} className="rounded p-1.5 text-[#B23A3A] hover:bg-[#B23A3A]/10"><AppIcon name="delete" size={14} /></button>
+                    </div>
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div className="mt-4"><Btn variant="outline" onClick={() => setTab("purchases")}>Go to Product Purchases <AppIcon name="chevron" size={14} /></Btn></div>
+
+      {modal && (
+        <Modal title={modal.id ? "Edit Supplier" : "Add Supplier"} onClose={() => setModal(null)}>
+          <form onSubmit={save}>
+            <Field label="Supplier Name" required><TextInput value={modal.name} onChange={e => setModal({ ...modal, name: e.target.value })} required /></Field>
+            <Field label="Phone"><TextInput value={modal.phone} onChange={e => setModal({ ...modal, phone: e.target.value })} /></Field>
+            <Field label="Address"><TextArea value={modal.address} onChange={e => setModal({ ...modal, address: e.target.value })} /></Field>
+            <Btn type="submit" className="w-full justify-center">Save Supplier</Btn>
+          </form>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+/* ================================================================== */
+/* PURCHASES (products from suppliers) + SUPPLIER PAYMENTS             */
+/* ================================================================== */
+
+function PurchasesTab({ purchases, setPurchases, suppliers, suppMap, supplierPayments, setSupplierPayments }) {
+  const [modal, setModal] = useState(null);
+  const [payModal, setPayModal] = useState(null);
+
+  function openAdd() {
+    if (suppliers.length === 0) { alert("Add a supplier first in the Suppliers tab."); return; }
+    setModal({ supplierId: suppliers[0].id, invoiceNumber: "", date: todayStr(), amount: "", items: "" });
+  }
+  function save(e) {
+    e.preventDefault();
+    if (!modal.amount || !modal.invoiceNumber) return;
+    setPurchases([...purchases, { ...modal, id: uid(), amount: Number(modal.amount) }]);
+    setModal(null);
+  }
+  function del(id) { if (confirmDelete("Delete this purchase record?")) setPurchases(purchases.filter(p => p.id !== id)); }
+
+  function openPay() {
+    if (suppliers.length === 0) { alert("Add a supplier first."); return; }
+    setPayModal({ supplierId: suppliers[0].id, date: todayStr(), amount: "", ref: "" });
+  }
+  function savePay(e) {
+    e.preventDefault();
+    if (!payModal.amount) return;
+    setSupplierPayments([...supplierPayments, { ...payModal, id: uid(), amount: Number(payModal.amount) }]);
+    setPayModal(null);
+  }
+  function delPay(id) { if (confirmDelete("Delete this payment record?")) setSupplierPayments(supplierPayments.filter(p => p.id !== id)); }
+
+  const sortedPurchases = [...purchases].sort((a, b) => b.date.localeCompare(a.date));
+  const sortedPayments = [...supplierPayments].sort((a, b) => b.date.localeCompare(a.date));
+
+  return (
+    <div>
+      <SectionHeader title="Product Purchases" desc="What you bought from each supplier, and what you've paid them" action={
+        <div className="flex gap-2"><Btn variant="outline" onClick={openPay}><AppIcon name="cash" size={16} /> Record Payment</Btn><Btn onClick={openAdd}><AppIcon name="add" size={16} /> Add Purchase</Btn></div>
+      } />
+
+      <h3 className="cbl-heading mb-2 text-base text-[#2B2320]">Purchases</h3>
+      {sortedPurchases.length === 0 ? (
+        <Empty icon="package" text="No product purchases recorded yet." />
+      ) : (
+        <div className="cbl-card mb-6 overflow-x-auto rounded-2xl bg-white shadow-sm">
+          <table className="w-full">
+            <thead className="border-b border-[#fbe8ef]"><tr><Th>Date</Th><Th>Supplier</Th><Th>Invoice #</Th><Th>Amount</Th><Th>Items</Th><Th></Th></tr></thead>
+            <tbody className="divide-y divide-[#fbe8ef]">
+              {sortedPurchases.map(p => (
+                <tr key={p.id} className="hover:bg-[#FFF6F8]">
+                  <Td>{fmtDate(p.date)}</Td>
+                  <Td className="font-medium">{suppMap[p.supplierId]?.name || "—"}</Td>
+                  <Td>{p.invoiceNumber}</Td>
+                  <Td>{fmtMoney(p.amount)}</Td>
+                  <Td className="max-w-xs truncate">{p.items}</Td>
+                  <Td><button onClick={() => del(p.id)} className="rounded p-1.5 text-[#B23A3A] hover:bg-[#B23A3A]/10"><AppIcon name="delete" size={14} /></button></Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <h3 className="cbl-heading mb-2 text-base text-[#2B2320]">Supplier Payments</h3>
+      {sortedPayments.length === 0 ? (
+        <Empty icon="cash" text="No payments to suppliers recorded yet." />
+      ) : (
+        <div className="cbl-card overflow-x-auto rounded-2xl bg-white shadow-sm">
+          <table className="w-full">
+            <thead className="border-b border-[#fbe8ef]"><tr><Th>Date</Th><Th>Supplier</Th><Th>Amount</Th><Th>Reference</Th><Th></Th></tr></thead>
+            <tbody className="divide-y divide-[#fbe8ef]">
+              {sortedPayments.map(p => (
+                <tr key={p.id} className="hover:bg-[#FFF6F8]">
+                  <Td>{fmtDate(p.date)}</Td>
+                  <Td className="font-medium">{suppMap[p.supplierId]?.name || "—"}</Td>
+                  <Td>{fmtMoney(p.amount)}</Td>
+                  <Td>{p.ref}</Td>
+                  <Td><button onClick={() => delPay(p.id)} className="rounded p-1.5 text-[#B23A3A] hover:bg-[#B23A3A]/10"><AppIcon name="delete" size={14} /></button></Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {modal && (
+        <Modal title="Add Purchase" onClose={() => setModal(null)}>
+          <form onSubmit={save}>
+            <Field label="Supplier" required>
+              <Select value={modal.supplierId} onChange={e => setModal({ ...modal, supplierId: e.target.value })}>
+                {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </Select>
+            </Field>
+            <Field label="Invoice Number" required><TextInput value={modal.invoiceNumber} onChange={e => setModal({ ...modal, invoiceNumber: e.target.value })} required /></Field>
+            <Field label="Date" required><TextInput type="date" value={modal.date} onChange={e => setModal({ ...modal, date: e.target.value })} required /></Field>
+            <Field label="Amount (BHD)" required><TextInput type="number" step="0.001" value={modal.amount} onChange={e => setModal({ ...modal, amount: e.target.value })} required /></Field>
+            <Field label="Items / Notes"><TextArea value={modal.items} onChange={e => setModal({ ...modal, items: e.target.value })} /></Field>
+            <Btn type="submit" className="w-full justify-center">Save Purchase</Btn>
+          </form>
+        </Modal>
+      )}
+
+      {payModal && (
+        <Modal title="Record Supplier Payment" onClose={() => setPayModal(null)}>
+          <form onSubmit={savePay}>
+            <Field label="Supplier" required>
+              <Select value={payModal.supplierId} onChange={e => setPayModal({ ...payModal, supplierId: e.target.value })}>
+                {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </Select>
+            </Field>
+            <Field label="Date" required><TextInput type="date" value={payModal.date} onChange={e => setPayModal({ ...payModal, date: e.target.value })} required /></Field>
+            <Field label="Amount (BHD)" required><TextInput type="number" step="0.001" value={payModal.amount} onChange={e => setPayModal({ ...payModal, amount: e.target.value })} required /></Field>
+            <Field label="Reference / Invoice #"><TextInput value={payModal.ref} onChange={e => setPayModal({ ...payModal, ref: e.target.value })} /></Field>
+            <Btn type="submit" className="w-full justify-center">Save Payment</Btn>
+          </form>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+/* ================================================================== */
+/* STAFF & SALARY SLIPS                                                */
+/* ================================================================== */
+
+function StaffTab({ staff, setStaff, salarySlips, setSalarySlips }) {
+  const [modal, setModal] = useState(null);
+  const [slipModal, setSlipModal] = useState(null);
+  const [printSlip, setPrintSlip] = useState(null);
+
+  function openAdd() { setModal({ name: "", role: "", mobile: "", baseSalary: "" }); }
+  function save(e) {
+    e.preventDefault();
+    if (!modal.name) return;
+    if (modal.id) setStaff(staff.map(s => s.id === modal.id ? { ...modal, baseSalary: Number(modal.baseSalary) } : s));
+    else setStaff([...staff, { ...modal, id: uid(), baseSalary: Number(modal.baseSalary || 0) }]);
+    setModal(null);
+  }
+  function del(id) { if (confirmDelete("Delete this staff member?")) setStaff(staff.filter(s => s.id !== id)); }
+
+  function openSlip(s) {
+    const now = new Date();
+    setSlipModal({ staffId: s.id, month: now.getMonth(), year: now.getFullYear(), baseSalary: s.baseSalary || 0, bonus: 0, deductions: 0 });
+  }
+  function saveSlip(e) {
+    e.preventDefault();
+    const net = Number(slipModal.baseSalary) + Number(slipModal.bonus || 0) - Number(slipModal.deductions || 0);
+    setSalarySlips([...salarySlips, { id: uid(), ...slipModal, baseSalary: Number(slipModal.baseSalary), bonus: Number(slipModal.bonus || 0), deductions: Number(slipModal.deductions || 0), netPay: net, generatedDate: todayStr() }]);
+    setSlipModal(null);
+  }
+  function delSlip(id) { if (confirmDelete("Delete this salary slip?")) setSalarySlips(salarySlips.filter(s => s.id !== id)); }
+
+  const staffMap = Object.fromEntries(staff.map(s => [s.id, s]));
+  const sortedSlips = [...salarySlips].sort((a, b) => (b.year - a.year) || (b.month - a.month));
+
+  return (
+    <div>
+      <SectionHeader title="Staff & Salary" desc="Team members and monthly salary slips" action={<Btn onClick={openAdd}><AppIcon name="add" size={16} /> Add Staff</Btn>} />
+
+      {staff.length === 0 ? (
+        <Empty icon="staff" text="No staff added yet." action={<Btn onClick={openAdd} className="mt-3"><AppIcon name="add" size={14} /> Add Staff</Btn>} />
+      ) : (
+        <div className="cbl-card mb-6 overflow-x-auto rounded-2xl bg-white shadow-sm">
+          <table className="w-full">
+            <thead className="border-b border-[#fbe8ef]"><tr><Th>Name</Th><Th>Role</Th><Th>Mobile</Th><Th>Base Salary</Th><Th></Th></tr></thead>
+            <tbody className="divide-y divide-[#fbe8ef]">
+              {staff.map(s => (
+                <tr key={s.id} className="hover:bg-[#FFF6F8]">
+                  <Td className="font-medium">{s.name}</Td>
+                  <Td>{s.role}</Td>
+                  <Td>{s.mobile}</Td>
+                  <Td>{fmtMoney(s.baseSalary)}</Td>
+                  <Td>
+                    <div className="flex gap-1">
+                      <Btn size="sm" variant="outline" onClick={() => openSlip(s)}>Generate Slip</Btn>
+                      <button onClick={() => setModal(s)} className="rounded p-1.5 text-[#2B2320]/50 hover:bg-black/5"><AppIcon name="edit" size={14} /></button>
+                      <button onClick={() => del(s.id)} className="rounded p-1.5 text-[#B23A3A] hover:bg-[#B23A3A]/10"><AppIcon name="delete" size={14} /></button>
+                    </div>
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <h3 className="cbl-heading mb-2 text-base text-[#2B2320]">Salary Slips</h3>
+      {sortedSlips.length === 0 ? (
+        <Empty icon="file" text="No salary slips generated yet." />
+      ) : (
+        <div className="cbl-card overflow-x-auto rounded-2xl bg-white shadow-sm">
+          <table className="w-full">
+            <thead className="border-b border-[#fbe8ef]"><tr><Th>Staff</Th><Th>Month</Th><Th>Base</Th><Th>Bonus</Th><Th>Deductions</Th><Th>Net Pay</Th><Th></Th></tr></thead>
+            <tbody className="divide-y divide-[#fbe8ef]">
+              {sortedSlips.map(s => (
+                <tr key={s.id} className="hover:bg-[#FFF6F8]">
+                  <Td className="font-medium">{staffMap[s.staffId]?.name || "—"}</Td>
+                  <Td>{monthLabel(s.month, s.year)}</Td>
+                  <Td>{fmtMoney(s.baseSalary)}</Td>
+                  <Td>{fmtMoney(s.bonus)}</Td>
+                  <Td>{fmtMoney(s.deductions)}</Td>
+                  <Td className="font-semibold">{fmtMoney(s.netPay)}</Td>
+                  <Td>
+                    <div className="flex gap-1">
+                      <button onClick={() => setPrintSlip(s)} className="rounded p-1.5 text-[#D6336C] hover:bg-[#D6336C]/10"><AppIcon name="printer" size={14} /></button>
+                      <button onClick={() => delSlip(s.id)} className="rounded p-1.5 text-[#B23A3A] hover:bg-[#B23A3A]/10"><AppIcon name="delete" size={14} /></button>
+                    </div>
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {modal && (
+        <Modal title={modal.id ? "Edit Staff" : "Add Staff"} onClose={() => setModal(null)}>
+          <form onSubmit={save}>
+            <Field label="Name" required><TextInput value={modal.name} onChange={e => setModal({ ...modal, name: e.target.value })} required /></Field>
+            <Field label="Role"><TextInput value={modal.role} onChange={e => setModal({ ...modal, role: e.target.value })} placeholder="e.g. Hair Stylist" /></Field>
+            <Field label="Mobile"><TextInput value={modal.mobile} onChange={e => setModal({ ...modal, mobile: e.target.value })} /></Field>
+            <Field label="Base Salary (BHD)" required><TextInput type="number" step="0.001" value={modal.baseSalary} onChange={e => setModal({ ...modal, baseSalary: e.target.value })} required /></Field>
+            <Btn type="submit" className="w-full justify-center">Save Staff</Btn>
+          </form>
+        </Modal>
+      )}
+
+      {slipModal && (
+        <Modal title="Generate Salary Slip" onClose={() => setSlipModal(null)}>
+          <form onSubmit={saveSlip}>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Month" required>
+                <Select value={slipModal.month} onChange={e => setSlipModal({ ...slipModal, month: Number(e.target.value) })}>
+                  {Array.from({ length: 12 }).map((_, i) => <option key={i} value={i}>{new Date(2000, i, 1).toLocaleDateString("en-GB", { month: "long" })}</option>)}
+                </Select>
+              </Field>
+              <Field label="Year" required><TextInput type="number" value={slipModal.year} onChange={e => setSlipModal({ ...slipModal, year: Number(e.target.value) })} required /></Field>
+            </div>
+            <Field label="Base Salary (BHD)" required><TextInput type="number" step="0.001" value={slipModal.baseSalary} onChange={e => setSlipModal({ ...slipModal, baseSalary: e.target.value })} required /></Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Bonus (BHD)"><TextInput type="number" step="0.001" value={slipModal.bonus} onChange={e => setSlipModal({ ...slipModal, bonus: e.target.value })} /></Field>
+              <Field label="Deductions (BHD)"><TextInput type="number" step="0.001" value={slipModal.deductions} onChange={e => setSlipModal({ ...slipModal, deductions: e.target.value })} /></Field>
+            </div>
+            <div className="mb-3 rounded-lg bg-[#FFF6F8] p-3 text-sm">
+              Net Pay: <span className="cbl-heading text-base text-[#D6336C]">{fmtMoney(Number(slipModal.baseSalary || 0) + Number(slipModal.bonus || 0) - Number(slipModal.deductions || 0))}</span>
+            </div>
+            <Btn type="submit" className="w-full justify-center">Save Slip</Btn>
+          </form>
+        </Modal>
+      )}
+
+      {printSlip && <SalarySlipPrint slip={printSlip} staffName={staffMap[printSlip.staffId]?.name} onClose={() => setPrintSlip(null)} />}
+    </div>
+  );
+}
+
+function SalarySlipPrint({ slip, staffName, onClose }) {
+  return (
+    <Modal title="Salary Slip" onClose={onClose} wide>
+      <div id="salary-slip-print" className="rounded-xl border border-[#f5d3e0] p-6">
+        <div className="mb-4 text-center">
+          <div className="cbl-heading text-xl text-[#D6336C]">Cherrys Beauty Lounge</div>
+          <div className="text-xs text-[#2B2320]/50">Salary Slip — {monthLabel(slip.month, slip.year)}</div>
+        </div>
+        <div className="mb-4 flex justify-between text-sm"><span>Employee</span><span className="font-medium">{staffName}</span></div>
+        <table className="w-full text-sm">
+          <tbody>
+            <tr className="border-b border-[#fbe8ef]"><td className="py-2">Base Salary</td><td className="py-2 text-right">{fmtMoney(slip.baseSalary)}</td></tr>
+            <tr className="border-b border-[#fbe8ef]"><td className="py-2">Bonus</td><td className="py-2 text-right">{fmtMoney(slip.bonus)}</td></tr>
+            <tr className="border-b border-[#fbe8ef]"><td className="py-2">Deductions</td><td className="py-2 text-right">-{fmtMoney(slip.deductions)}</td></tr>
+            <tr className="font-semibold"><td className="py-2">Net Pay</td><td className="py-2 text-right">{fmtMoney(slip.netPay)}</td></tr>
+          </tbody>
+        </table>
+        <div className="mt-6 text-center text-xs text-[#2B2320]/40">Generated on {fmtDate(slip.generatedDate)}</div>
+      </div>
+      <Btn className="mt-4 w-full justify-center" onClick={() => window.print()}><AppIcon name="printer" size={16} /> Print Slip</Btn>
+    </Modal>
+  );
+}
+
+/* ================================================================== */
+/* LOANS                                                                */
+/* ================================================================== */
+
+function LoansTab({ loans, setLoans }) {
+  const [modal, setModal] = useState(null);
+  function openAdd() { setModal({ direction: "to", date: todayStr(), amount: "", notes: "" }); }
+  function save(e) {
+    e.preventDefault();
+    if (!modal.amount) return;
+    setLoans([...loans, { ...modal, id: uid(), amount: Number(modal.amount) }]);
+    setModal(null);
+  }
+  function del(id) { if (confirmDelete("Delete this loan record?")) setLoans(loans.filter(l => l.id !== id)); }
+
+  const toSadaque = loans.filter(l => l.direction === "to").reduce((s, l) => s + l.amount, 0);
+  const fromSadaque = loans.filter(l => l.direction === "from").reduce((s, l) => s + l.amount, 0);
+  const sorted = [...loans].sort((a, b) => b.date.localeCompare(a.date));
+
+  return (
+    <div>
+      <SectionHeader title="Loans with Sadaque" desc="Track money given to or received from Sadaque for the business" action={<Btn onClick={openAdd}><AppIcon name="add" size={16} /> Add Loan Entry</Btn>} />
+
+      <div className="mb-4 grid grid-cols-3 gap-3">
+        <StatCard label="Paid to Sadaque" value={fmtMoney(toSadaque)} icon="handcoins" tone="rose" />
+        <StatCard label="Received from Sadaque" value={fmtMoney(fromSadaque)} icon="handcoins" tone="green" />
+        <StatCard label="Net Balance" value={fmtMoney(fromSadaque - toSadaque)} icon="cash" tone={fromSadaque - toSadaque >= 0 ? "green" : "amber"} sub={fromSadaque - toSadaque >= 0 ? "Owed to business" : "Business owes Sadaque"} />
+      </div>
+
+      {sorted.length === 0 ? (
+        <Empty icon="handcoins" text="No loan records yet." />
+      ) : (
+        <div className="cbl-card overflow-x-auto rounded-2xl bg-white shadow-sm">
+          <table className="w-full">
+            <thead className="border-b border-[#fbe8ef]"><tr><Th>Date</Th><Th>Direction</Th><Th>Amount</Th><Th>Notes</Th><Th></Th></tr></thead>
+            <tbody className="divide-y divide-[#fbe8ef]">
+              {sorted.map(l => (
+                <tr key={l.id} className="hover:bg-[#FFF6F8]">
+                  <Td>{fmtDate(l.date)}</Td>
+                  <Td><Pill tone={l.direction === "to" ? "rose" : "green"}>{l.direction === "to" ? "Loan to Sadaque" : "Loan from Sadaque"}</Pill></Td>
+                  <Td>{fmtMoney(l.amount)}</Td>
+                  <Td className="max-w-xs truncate">{l.notes}</Td>
+                  <Td><button onClick={() => del(l.id)} className="rounded p-1.5 text-[#B23A3A] hover:bg-[#B23A3A]/10"><AppIcon name="delete" size={14} /></button></Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {modal && (
+        <Modal title="Add Loan Entry" onClose={() => setModal(null)}>
+          <form onSubmit={save}>
+            <Field label="Direction" required>
+              <Select value={modal.direction} onChange={e => setModal({ ...modal, direction: e.target.value })}>
+                <option value="to">Loan Payment to Sadaque</option>
+                <option value="from">Loan Received from Sadaque</option>
+              </Select>
+            </Field>
+            <Field label="Date" required><TextInput type="date" value={modal.date} onChange={e => setModal({ ...modal, date: e.target.value })} required /></Field>
+            <Field label="Amount (BHD)" required><TextInput type="number" step="0.001" value={modal.amount} onChange={e => setModal({ ...modal, amount: e.target.value })} required /></Field>
+            <Field label="Notes"><TextArea value={modal.notes} onChange={e => setModal({ ...modal, notes: e.target.value })} /></Field>
+            <Btn type="submit" className="w-full justify-center">Save Entry</Btn>
+          </form>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+/* ================================================================== */
+/* REPORTS                                                              */
+/* ================================================================== */
+
+function ReportsTab({ sales, expenses, custMap, suppliers, suppMap, purchases, supplierPayments, staff, salarySlips }) {
+  const now = new Date();
+  const [type, setType] = useState("sales");
+  const [month, setMonth] = useState(now.getMonth());
+  const [year, setYear] = useState(now.getFullYear());
+  const prefix = `${year}-${String(month + 1).padStart(2, "0")}`;
+
+  const reportRows = useMemo(() => {
+    if (type === "sales") return sales.filter(s => s.date.startsWith(prefix)).sort((a, b) => a.date.localeCompare(b.date));
+    if (type === "expenses") return expenses.filter(e => e.date.startsWith(prefix)).sort((a, b) => a.date.localeCompare(b.date));
+    if (type === "credit") return sales.filter(s => !s.paid);
+    if (type === "supplierPayments") return supplierPayments.filter(p => p.date.startsWith(prefix)).sort((a, b) => a.date.localeCompare(b.date));
+    return [];
+  }, [type, prefix, sales, expenses, supplierPayments]);
+
+  const total = reportRows.reduce((s, r) => s + Number(r.amount), 0);
+  const titles = { sales: "Monthly Sales Report", expenses: "Monthly Expense Report", credit: "Credit (Non-Paid) Report", supplierPayments: "Supplier Payments Report" };
+
+  return (
+    <div>
+      <SectionHeader title="Reports" desc="Generate and print monthly business reports" />
+
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <Select value={type} onChange={e => setType(e.target.value)} className="w-auto">
+          <option value="sales">Monthly Sales Report</option>
+          <option value="expenses">Monthly Expense Report</option>
+          <option value="credit">Credit (Non-Paid) Report</option>
+          <option value="supplierPayments">Supplier Payments Report</option>
+        </Select>
+        {type !== "credit" && <>
+          <Select value={month} onChange={e => setMonth(Number(e.target.value))} className="w-auto">
+            {Array.from({ length: 12 }).map((_, i) => <option key={i} value={i}>{new Date(2000, i, 1).toLocaleDateString("en-GB", { month: "long" })}</option>)}
+          </Select>
+          <TextInput type="number" value={year} onChange={e => setYear(Number(e.target.value))} className="w-24" />
+        </>}
+        <Btn onClick={() => window.print()}><AppIcon name="printer" size={16} /> Print</Btn>
+      </div>
+
+      <div id="report-print" className="cbl-card rounded-2xl bg-white p-6 shadow-sm">
+        <div className="mb-4 text-center">
+          <div className="cbl-heading text-xl text-[#D6336C]">Cherrys Beauty Lounge</div>
+          <div className="text-sm text-[#2B2320]/60">{titles[type]}{type !== "credit" && ` — ${monthLabel(month, year)}`}</div>
+        </div>
+
+        {reportRows.length === 0 ? <Empty icon="file" text="No records for this period." /> : (
+          <table className="w-full text-sm">
+            <thead className="border-b border-[#fbe8ef]"><tr>
+              <Th>Date</Th>
+              {type === "sales" && <><Th>Customer</Th><Th>Service</Th><Th>Payment</Th></>}
+              {type === "expenses" && <Th>Category</Th>}
+              {type === "credit" && <><Th>Customer</Th><Th>Service</Th></>}
+              {type === "supplierPayments" && <Th>Supplier</Th>}
+              <Th>Amount</Th>
+            </tr></thead>
+            <tbody className="divide-y divide-[#fbe8ef]">
+              {reportRows.map(r => (
+                <tr key={r.id}>
+                  <Td>{fmtDate(r.date)}</Td>
+                  {type === "sales" && <><Td>{custMap[r.customerId]?.name}</Td><Td>{r.description}</Td><Td>{r.paymentMode}</Td></>}
+                  {type === "expenses" && <Td>{r.category}</Td>}
+                  {type === "credit" && <><Td>{custMap[r.customerId]?.name}</Td><Td>{r.description}</Td></>}
+                  {type === "supplierPayments" && <Td>{suppMap[r.supplierId]?.name}</Td>}
+                  <Td>{fmtMoney(r.amount)}</Td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot><tr className="border-t-2 border-[#2B2320]/20 font-semibold"><Td colSpan={type === "sales" ? 4 : type === "credit" ? 3 : 2}>Total</Td><Td>{fmtMoney(total)}</Td></tr></tfoot>
+          </table>
+        )}
+        <div className="mt-6 text-center text-xs text-[#2B2320]/40">Printed on {fmtDate(todayStr())}</div>
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================== */
+/* WHATSAPP OFFERS                                                     */
+/* ================================================================== */
+
+function WhatsAppTab({ customers, customerStats }) {
+  const [message, setMessage] = useState("✨ Special offer at Cherrys Beauty Lounge! Visit us this week and enjoy 20% off on all services. Book your slot now!");
+  const [selected, setSelected] = useState(() => new Set(customers.map(c => c.id)));
+  const [audience, setAudience] = useState("all");
+
+  const toggle = (id) => setSelected(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+
+  let audienceList = customers;
+  if (audience === "regular") audienceList = customers.filter(c => (customerStats[c.id]?.visits || 0) >= 3);
+  if (audience === "inactive") audienceList = customers.filter(c => customerStats[c.id]?.lastVisit && daysBetween(customerStats[c.id].lastVisit, todayStr()) >= 30);
+
+  useEffect(() => { setSelected(new Set(audienceList.map(c => c.id))); }, [audience, customers.length]);
+
+  return (
+    <div>
+      <SectionHeader title="WhatsApp Offers" desc="Compose one message, then send it to each selected customer's WhatsApp" />
+
+      <div className="mb-4 rounded-lg bg-[#C9A15A]/10 px-3 py-2 text-xs text-[#8a6a2f]">
+        True one-click bulk WhatsApp broadcasting needs the official WhatsApp Business API (Meta business verification + a paid provider). Without that, each message below opens as a pre-filled WhatsApp chat you tap "Send" on — fast, but one tap per customer rather than one tap for everyone.
+      </div>
+
+      <div className="cbl-card mb-4 rounded-2xl bg-white p-4 shadow-sm">
+        <Field label="Offer Message"><TextArea value={message} onChange={e => setMessage(e.target.value)} className="min-h-[90px]" /></Field>
+        <div className="flex flex-wrap gap-2">
+          {[["all", "All Customers"], ["regular", "Regular Customers"], ["inactive", "Inactive 30+ days"]].map(([k, l]) => (
+            <button key={k} onClick={() => setAudience(k)} className={`rounded-full px-3 py-1 text-xs font-medium ${audience === k ? "bg-[#D6336C] text-white" : "bg-white text-[#2B2320]/60 border border-[#f5d3e0]"}`}>{l}</button>
+          ))}
+        </div>
+      </div>
+
+      {audienceList.length === 0 ? (
+        <Empty icon="whatsapp" text="No customers match this audience." />
+      ) : (
+        <div className="cbl-card overflow-x-auto rounded-2xl bg-white shadow-sm">
+          <table className="w-full">
+            <thead className="border-b border-[#fbe8ef]"><tr><Th></Th><Th>Name</Th><Th>Mobile</Th><Th></Th></tr></thead>
+            <tbody className="divide-y divide-[#fbe8ef]">
+              {audienceList.map(c => (
+                <tr key={c.id} className="hover:bg-[#FFF6F8]">
+                  <Td><input type="checkbox" checked={selected.has(c.id)} onChange={() => toggle(c.id)} /></Td>
+                  <Td className="font-medium">{c.name}</Td>
+                  <Td>{c.mobile}</Td>
+                  <Td>
+                    {selected.has(c.id) && (
+                      <a href={waLink(c.mobile, message)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-full bg-[#4E7C59]/10 px-3 py-1 text-xs font-medium text-[#4E7C59] hover:bg-[#4E7C59]/20">
+                        <AppIcon name="whatsapp" size={12} /> Send
+                      </a>
+                    )}
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ================================================================== */
+/* PIN GATE                                                            */
+/* A lightweight, client-side lock so the app isn't wide open to       */
+/* anyone who finds the URL. This is NOT strong security — the data    */
+/* itself is protected only by your Supabase anon key + RLS policy.    */
+/* For real access control, add Supabase Auth later.                   */
+/* ================================================================== */
+
+function PinGate({ children }) {
+  const [unlocked, setUnlocked] = useState(() => {
+    try { return sessionStorage.getItem("cbl_unlocked") === "yes"; } catch (e) { return false; }
+  });
+  const [pin, setPin] = useState("");
+  const [err, setErr] = useState(false);
+
+  if (!APP_PIN) return children; // no PIN configured, skip the gate entirely
+  if (unlocked) return children;
+
+  function submit(e) {
+    e.preventDefault();
+    if (pin === APP_PIN) {
+      try { sessionStorage.setItem("cbl_unlocked", "yes"); } catch (e2) {}
+      setUnlocked(true);
+    } else {
+      setErr(true);
+    }
+  }
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-[#E0447C] via-[#B0225F] to-[#5C1140] px-4">
+      <form onSubmit={submit} className="w-full max-w-xs rounded-2xl bg-white p-6 text-center shadow-xl">
+        <div className="mb-3 text-3xl">✨</div>
+        <h1 className="cbl-heading mb-1 text-lg text-[#2B2320]">{APP_NAME}</h1>
+        <p className="mb-4 text-xs text-[#2B2320]/50">Enter the shop PIN to continue</p>
+        <input
+          type="password"
+          inputMode="numeric"
+          autoFocus
+          value={pin}
+          onChange={(e) => { setPin(e.target.value); setErr(false); }}
+          className="mb-2 w-full rounded-lg border border-[#f5d3e0] bg-[#FFF6F8] px-3 py-2 text-center text-lg tracking-widest outline-none focus:border-[#D6336C]"
+        />
+        {err && <p className="mb-2 text-xs text-[#B23A3A]">Incorrect PIN, try again.</p>}
+        <button type="submit" className="w-full rounded-lg py-2 text-sm font-medium text-white" style={{ background: "linear-gradient(135deg,#D6336C,#A61E5C)" }}>
+          Unlock
+        </button>
+      </form>
+    </div>
+  );
+}
+
+/* ================================================================== */
+/* BOOTSTRAP                                                            */
+/* ================================================================== */
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  realtime: { params: { eventsPerSecond: 5 } },
+});
+
+function Root() {
+  return (
+    <PinGate>
+      <App supabase={supabase} />
+    </PinGate>
+  );
+}
+
+const rootEl = document.getElementById("root");
+if (!SUPABASE_URL || SUPABASE_URL.includes("YOUR-PROJECT")) {
+  rootEl.innerHTML = `
+    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:sans-serif;padding:24px;text-align:center;background:#FFF6F8;color:#2B2320;">
+      <div style="max-width:420px;">
+        <div style="font-size:32px;margin-bottom:8px;">⚙️</div>
+        <h1 style="margin:0 0 8px;">Setup needed</h1>
+        <p style="opacity:.7;font-size:14px;">Open <code>config.js</code> and paste in your Supabase Project URL and anon key. See SETUP-GUIDE.md for step-by-step instructions.</p>
+      </div>
+    </div>`;
+} else {
+  createRoot(rootEl).render(<Root />);
+}
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch(() => {});
+  });
+}
