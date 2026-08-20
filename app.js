@@ -1458,6 +1458,7 @@ function CustomerPicker({ customers, value, onChange, onNewCustomer }) {
 
 function SalesTab({ sales, setSales, customers, setCustomers, staff, services, custMap, staffMap, svcMap, currentUser }) {
   const [modal, setModal] = useState(null);
+  const [editModal, setEditModal] = useState(null);
   const [filterMode, setFilterMode] = useState("All");
   const isAdmin = !currentUser || currentUser.role === "admin";
 
@@ -1494,6 +1495,33 @@ function SalesTab({ sales, setSales, customers, setCustomers, staff, services, c
   }
 
   function del(id) { if (confirmDelete("Delete this sale record?")) setSales(sales.filter(s => s.id !== id)); }
+
+  function openEdit(s) {
+    setEditModal({
+      id: s.id, date: s.date, customerId: s.customerId, staffId: s.staffId,
+      description: s.description, amount: s.amount,
+    });
+  }
+
+  function saveEdit(e) {
+    e.preventDefault();
+    const amount = Number(editModal.amount);
+    if (!editModal.customerId || !amount) return;
+    setSales(sales.map((s) => {
+      if (s.id !== editModal.id) return s;
+      const wasFullyPaid = (s.amountPaid || 0) >= s.amount;
+      let payments = s.payments || [];
+      let amountPaid = s.amountPaid || 0;
+      if (wasFullyPaid) {
+        amountPaid = amount;
+        if (payments.length === 1) payments = [{ ...payments[0], amount }];
+      } else {
+        amountPaid = Math.min(amountPaid, amount);
+      }
+      return { ...s, date: editModal.date, customerId: editModal.customerId, staffId: editModal.staffId, description: editModal.description, amount, amountPaid, payments };
+    }));
+    setEditModal(null);
+  }
 
   const filtered = filterMode === "All" ? sales : filterMode === "Credit" ? sales.filter(s => s.amountPaid < s.amount) : sales.filter(s => (s.payments || []).some(p => p.mode === filterMode));
   const sorted = [...filtered].sort((a, b) => b.date.localeCompare(a.date));
@@ -1539,7 +1567,14 @@ function SalesTab({ sales, setSales, customers, setCustomers, staff, services, c
                     <Td>{fmtMoney(s.amount)}</Td>
                     <Td><Pill tone={status === "Paid" ? "green" : status === "Partial" ? "amber" : "red"}>{status}</Pill></Td>
                     <Td>{s.addedBy || "—"}</Td>
-                    <Td>{isAdmin && <button onClick={() => del(s.id)} className="rounded p-1.5 text-[#B23A3A] hover:bg-[#B23A3A]/10"><AppIcon name="delete" size={14} /></button>}</Td>
+                    <Td>
+                      {isAdmin && (
+                        <div className="flex gap-1">
+                          <button onClick={() => openEdit(s)} className="rounded p-1.5 text-[#2B2320]/50 hover:bg-black/5"><AppIcon name="edit" size={14} /></button>
+                          <button onClick={() => del(s.id)} className="rounded p-1.5 text-[#B23A3A] hover:bg-[#B23A3A]/10"><AppIcon name="delete" size={14} /></button>
+                        </div>
+                      )}
+                    </Td>
                   </tr>
                 );
               })}
@@ -1581,6 +1616,29 @@ function SalesTab({ sales, setSales, customers, setCustomers, staff, services, c
               </div>
             )}
             <Btn type="submit" className="w-full justify-center">Save Sale</Btn>
+          </form>
+        </Modal>
+      )}
+
+      {editModal && (
+        <Modal title={`Edit Sale — ${sales.find(s => s.id === editModal.id)?.invoiceNo || ""}`} onClose={() => setEditModal(null)}>
+          <form onSubmit={saveEdit}>
+            <Field label="Date" required><TextInput type="date" value={editModal.date} onChange={e => setEditModal({ ...editModal, date: e.target.value })} required /></Field>
+            <Field label="Customer" required>
+              <CustomerPicker customers={customers} value={editModal.customerId} onChange={(id) => setEditModal({ ...editModal, customerId: id })} />
+            </Field>
+            <Field label="Staff">
+              <Select value={editModal.staffId} onChange={e => setEditModal({ ...editModal, staffId: e.target.value })}>
+                <option value="">—</option>
+                {staff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </Select>
+            </Field>
+            <Field label="Service / Description" required><TextInput value={editModal.description} onChange={e => setEditModal({ ...editModal, description: e.target.value })} required /></Field>
+            <Field label="Amount (BHD)" required><TextInput type="number" step="0.001" value={editModal.amount} onChange={e => setEditModal({ ...editModal, amount: e.target.value })} required /></Field>
+            <div className="mb-3 rounded-lg bg-[#C9A15A]/10 px-3 py-2 text-xs text-[#8a6a2f]">
+              Payment mode and payment history aren't changed here — manage those from the Credit tab if this sale still has a balance due.
+            </div>
+            <Btn type="submit" className="w-full justify-center">Save Changes</Btn>
           </form>
         </Modal>
       )}
