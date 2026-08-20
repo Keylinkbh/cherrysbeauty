@@ -55,9 +55,15 @@ const NAV_ADMIN = [
   { key: "loans", label: "Loans (Sadaque)", icon: "handcoins" },
   { key: "reports", label: "Reports", icon: "file" },
   { key: "whatsapp", label: "WhatsApp Offers", icon: "whatsapp" },
+  { key: "permissions", label: "Staff Permissions", icon: "lock" },
 ];
-const NAV_STAFF = [
-  { key: "sales", label: "Sales & Payments", icon: "wallet" },
+/* Sections staff can be granted access to, beyond Sales & Payments (always on). */
+const GRANTABLE_TABS = [
+  { key: "customers", label: "Customers", icon: "users" },
+  { key: "appointments", label: "Appointments", icon: "calendar" },
+  { key: "whatsapp", label: "WhatsApp Offers", icon: "whatsapp" },
+  { key: "reports", label: "Reports", icon: "file" },
+  { key: "expenses", label: "Expenses & Bills", icon: "receipt" },
 ];
 
 /* Invoice numbers like CBL1923-0000001BH-2026 */
@@ -82,7 +88,7 @@ const ENTITIES = {
   appointments: "appointments", sales: "sales", expenses: "expenses",
   suppliers: "suppliers", purchases: "purchases",
   supplierPayments: "supplier_payments", loans: "loans",
-  salarySlips: "salary_slips",
+  salarySlips: "salary_slips", permissions: "permissions",
 };
 
 const DEFAULT_SERVICES = [
@@ -258,7 +264,7 @@ const ICONS = {
   handcoins: "🤝", printer: "🖨️", whatsapp: "💬", add: "➕", edit: "✏️",
   delete: "🗑️", close: "✖️", search: "🔍", phone: "📞", check: "✅",
   cancel: "❌", clock: "⏰", up: "📈", down: "📉", warning: "⚠️",
-  sparkle: "✨", menu: "☰", cash: "💵", chevron: "▶️", star: "⭐", upload: "📥",
+  sparkle: "✨", menu: "☰", cash: "💵", chevron: "▶️", star: "⭐", upload: "📥", lock: "🔒",
 };
 
 function AppIcon({ name, size = 16, className = "" }) {
@@ -391,8 +397,6 @@ function confirmDelete(msg) { return window.confirm(msg || "Delete this record? 
 export default function App({ supabase, currentUser, onLogout }) {
   const [navOpen, setNavOpen] = useState(false);
   const isStaff = currentUser.role === "staff";
-  const [tab, setTab] = useState(isStaff ? "sales" : "dashboard");
-  const NAV = isStaff ? NAV_STAFF : NAV_ADMIN;
 
   const [customers, setCustomers, lCust] = useSupabaseList(supabase, ENTITIES.customers, []);
   const [staff, setStaff, lStaff] = useSupabaseList(supabase, ENTITIES.staff, []);
@@ -405,8 +409,26 @@ export default function App({ supabase, currentUser, onLogout }) {
   const [supplierPayments, setSupplierPayments, lSp] = useSupabaseList(supabase, ENTITIES.supplierPayments, []);
   const [loans, setLoans, lLoans] = useSupabaseList(supabase, ENTITIES.loans, []);
   const [salarySlips, setSalarySlips, lSlips] = useSupabaseList(supabase, ENTITIES.salarySlips, []);
+  const [permissions, setPermissions, lPerms] = useSupabaseList(supabase, ENTITIES.permissions, []);
 
-  const allLoaded = lCust && lStaff && lServ && lAppt && lSales && lExp && lSupp && lPurch && lSp && lLoans && lSlips;
+  const allLoaded = lCust && lStaff && lServ && lAppt && lSales && lExp && lSupp && lPurch && lSp && lLoans && lSlips && lPerms;
+
+  const myPerms = useMemo(() => {
+    if (!isStaff) return null;
+    return permissions.find((p) => p.username === currentUser.username) || {};
+  }, [permissions, isStaff, currentUser.username]);
+
+  const canAccess = useCallback((key) => {
+    if (!isStaff) return true;
+    if (key === "sales") return true;
+    return !!(myPerms && myPerms[key]);
+  }, [isStaff, myPerms]);
+
+  const NAV = isStaff
+    ? [{ key: "sales", label: "Sales & Payments", icon: "wallet" }, ...GRANTABLE_TABS.filter((t) => canAccess(t.key))]
+    : NAV_ADMIN;
+
+  const [tab, setTab] = useState(isStaff ? "sales" : "dashboard");
 
   const custMap = useMemo(() => Object.fromEntries(customers.map(c => [c.id, c])), [customers]);
   const staffMap = useMemo(() => Object.fromEntries(staff.map(s => [s.id, s])), [staff]);
@@ -564,17 +586,18 @@ export default function App({ supabase, currentUser, onLogout }) {
 
             <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
               {tab === "dashboard" && !isStaff && <Dashboard {...{ customers, appointments, sales, expenses, custMap, staffMap, svcMap, customerStats, setTab }} />}
-              {tab === "customers" && !isStaff && <CustomersTab {...{ customers, setCustomers, customerStats, staff }} />}
-              {tab === "appointments" && !isStaff && <AppointmentsTab {...{ appointments, setAppointments, customers, setCustomers, staff, services, custMap, staffMap, svcMap, setTab, setSales, currentUser }} />}
+              {tab === "customers" && canAccess("customers") && <CustomersTab {...{ customers, setCustomers, customerStats, staff }} />}
+              {tab === "appointments" && canAccess("appointments") && <AppointmentsTab {...{ appointments, setAppointments, customers, setCustomers, staff, services, custMap, staffMap, svcMap, setTab, setSales, currentUser }} />}
               {tab === "sales" && <SalesTab {...{ sales, setSales, customers, setCustomers, staff, services, custMap, staffMap, svcMap, currentUser }} />}
               {tab === "credit" && !isStaff && <CreditTab {...{ sales, setSales, custMap, currentUser }} />}
-              {tab === "expenses" && !isStaff && <ExpensesTab {...{ expenses, setExpenses, staff }} />}
+              {tab === "expenses" && canAccess("expenses") && <ExpensesTab {...{ expenses, setExpenses, staff }} />}
               {tab === "suppliers" && !isStaff && <SuppliersTab {...{ suppliers, setSuppliers, purchases, supplierPayments, setTab }} />}
               {tab === "purchases" && !isStaff && <PurchasesTab {...{ purchases, setPurchases, suppliers, suppMap, supplierPayments, setSupplierPayments }} />}
               {tab === "staff" && !isStaff && <StaffTab {...{ staff, setStaff, salarySlips, setSalarySlips }} />}
               {tab === "loans" && !isStaff && <LoansTab {...{ loans, setLoans }} />}
-              {tab === "reports" && !isStaff && <ReportsTab {...{ sales, expenses, custMap, suppliers, suppMap, purchases, supplierPayments, staff, salarySlips }} />}
-              {tab === "whatsapp" && !isStaff && <WhatsAppTab {...{ customers, customerStats }} />}
+              {tab === "reports" && canAccess("reports") && <ReportsTab {...{ sales, expenses, custMap, suppliers, suppMap, purchases, supplierPayments, staff, salarySlips }} />}
+              {tab === "whatsapp" && canAccess("whatsapp") && <WhatsAppTab {...{ customers, customerStats }} />}
+              {tab === "permissions" && !isStaff && <PermissionsTab {...{ permissions, setPermissions }} />}
             </div>
           </main>
         </div>
@@ -2123,6 +2146,72 @@ function LoansTab({ loans, setLoans }) {
           </form>
         </Modal>
       )}
+    </div>
+  );
+}
+
+/* ================================================================== */
+/* STAFF PERMISSIONS                                                    */
+/* ================================================================== */
+
+function PermissionsTab({ permissions, setPermissions }) {
+  const staffAccounts = STAFF_USERS.filter((u) => u.role === "staff");
+
+  function getPerm(username) {
+    return permissions.find((p) => p.username === username) || { username, customers: false, appointments: false, whatsapp: false, reports: false, expenses: false };
+  }
+
+  function toggle(username, key) {
+    const current = getPerm(username);
+    const updated = { ...current, [key]: !current[key] };
+    const exists = permissions.some((p) => p.username === username);
+    if (exists) setPermissions(permissions.map((p) => (p.username === username ? updated : p)));
+    else setPermissions([...permissions, { ...updated, id: uid() }]);
+  }
+
+  return (
+    <div>
+      <SectionHeader
+        title="Staff Permissions"
+        desc="Sales & Payments is always available to staff. Choose which other sections each person can also open."
+      />
+      {staffAccounts.length === 0 ? (
+        <Empty icon="staff" text="No staff accounts found. Add them in config.js under STAFF_USERS first." />
+      ) : (
+        <div className="space-y-4">
+          {staffAccounts.map((u) => {
+            const perm = getPerm(u.username);
+            return (
+              <div key={u.username} className="cbl-card rounded-2xl bg-white p-4 shadow-sm">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="font-medium text-[#2B2320]">{u.name}</div>
+                    <div className="text-xs text-[#2B2320]/45">@{u.username}</div>
+                  </div>
+                  <Pill tone="rose">Sales & Payments — always on</Pill>
+                </div>
+                <div className="flex flex-wrap gap-x-6 gap-y-3">
+                  {GRANTABLE_TABS.map((t) => (
+                    <label key={t.key} className="flex cursor-pointer items-center gap-2 text-sm text-[#2B2320]/80">
+                      <input
+                        type="checkbox"
+                        checked={!!perm[t.key]}
+                        onChange={() => toggle(u.username, t.key)}
+                        className="h-4 w-4 accent-[#D6336C]"
+                      />
+                      <AppIcon name={t.icon} size={14} />
+                      {t.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <div className="mt-4 rounded-lg bg-[#C9A15A]/10 px-3 py-2 text-xs text-[#8a6a2f]">
+        Changes apply the next time that staff member opens or reloads the app.
+      </div>
     </div>
   );
 }
