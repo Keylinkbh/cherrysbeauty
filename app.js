@@ -345,13 +345,13 @@ function Select({ children, className = "", ...props }) { return <select {...pro
 function TextArea({ className = "", ...props }) { return <textarea {...props} className={`${inputCls} min-h-[70px] ${className}`} />; }
 
 function Btn({ children, onClick, variant = "primary", type = "button", size = "md", className = "" }) {
-  const base = "inline-flex items-center gap-1.5 rounded-lg font-medium transition active:scale-[0.98]";
-  const sizes = size === "sm" ? "px-2.5 py-1.5 text-xs" : "px-4 py-2 text-sm";
+  const base = "inline-flex items-center gap-1.5 rounded-full font-semibold transition active:scale-[0.98] shadow-sm";
+  const sizes = size === "sm" ? "px-3 py-1.5 text-xs" : "px-4 py-2 text-sm";
   const variants = {
-    primary: "text-white",
-    ghost: "bg-transparent text-[#D6336C] hover:bg-[#D6336C]/10",
-    danger: "bg-[#B23A3A]/10 text-[#B23A3A] hover:bg-[#B23A3A]/20",
-    outline: "border border-[#D6336C]/30 text-[#D6336C] hover:bg-[#D6336C]/5",
+    primary: "text-white shadow-[#D6336C]/20",
+    ghost: "bg-transparent text-[#D6336C] hover:bg-[#D6336C]/10 shadow-none",
+    danger: "bg-[#B23A3A]/10 text-[#B23A3A] hover:bg-[#B23A3A]/20 shadow-none",
+    outline: "border border-[#D6336C]/30 text-[#D6336C] hover:bg-[#D6336C]/5 bg-white shadow-none",
   };
   const style = variant === "primary" ? { background: "linear-gradient(135deg,#D6336C,#A61E5C)" } : {};
   return (
@@ -403,13 +403,13 @@ function Td({ children, className = "", ...rest }) { return <td {...rest} classN
 
 function Pill({ children, tone = "gray" }) {
   const tones = {
-    gray: "bg-black/5 text-[#2B2320]/60",
-    green: "bg-[#4E7C59]/10 text-[#4E7C59]",
-    red: "bg-[#B23A3A]/10 text-[#B23A3A]",
-    amber: "bg-[#C97B2E]/10 text-[#C97B2E]",
-    rose: "bg-[#D6336C]/10 text-[#D6336C]",
+    gray: "bg-[#F1E9EC] text-[#5c5257]",
+    green: "bg-[#E3F0E6] text-[#2E5236]",
+    red: "bg-[#FBE4E4] text-[#8E2C2C]",
+    amber: "bg-[#FBEBDA] text-[#8a4f10]",
+    rose: "bg-[#FCE2EC] text-[#9c1a52]",
   };
-  return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${tones[tone]}`}>{children}</span>;
+  return <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold ${tones[tone]}`}>{children}</span>;
 }
 
 /** Simple search box that filters a list of records by any of the given text fields. No dependencies. */
@@ -712,6 +712,34 @@ function ProgressRing({ percent, color, size = 84, label, value }) {
   );
 }
 
+/** Two-line cash flow chart (sales vs expenses), plain SVG — no chart library dependency. */
+function CashFlowLine({ days, max }) {
+  const w = 100, h = 100;
+  const pointsFor = (key) => days.map((d, i) => {
+    const x = (i / (days.length - 1)) * w;
+    const y = h - (d[key] / max) * h;
+    return `${x},${y}`;
+  }).join(" ");
+
+  return (
+    <div>
+      <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className="h-28 w-full overflow-visible">
+        <polyline points={pointsFor("total")} fill="none" stroke="#4E7C59" strokeWidth="1.6" vectorEffect="non-scaling-stroke" />
+        <polyline points={pointsFor("expTotal")} fill="none" stroke="#B23A3A" strokeWidth="1.6" strokeDasharray="3 2" vectorEffect="non-scaling-stroke" />
+        {days.map((d, i) => {
+          const x = (i / (days.length - 1)) * w;
+          const y = h - (d.total / max) * h;
+          return <circle key={d.date} cx={x} cy={y} r="1.4" fill="#4E7C59" />;
+        })}
+      </svg>
+      <div className="mt-2 flex items-center gap-4 text-[10px] text-[#2B2320]/50">
+        <span className="flex items-center gap-1"><span className="h-0.5 w-3 bg-[#4E7C59]"></span>Sales</span>
+        <span className="flex items-center gap-1"><span className="h-0.5 w-3 bg-[#B23A3A]" style={{ backgroundImage: "repeating-linear-gradient(90deg,#B23A3A 0 3px,transparent 3px 5px)" }}></span>Expenses</span>
+      </div>
+    </div>
+  );
+}
+
 function Dashboard({ customers, appointments, sales, expenses, custMap, staffMap, svcMap, customerStats, setTab }) {
   const today = todayStr();
   const now = new Date();
@@ -744,11 +772,13 @@ function Dashboard({ customers, appointments, sales, expenses, custMap, staffMap
       d.setDate(d.getDate() - i);
       const ds = d.toISOString().slice(0, 10);
       const total = sales.filter((s) => s.date === ds).reduce((sum, s) => sum + Number(s.amount), 0);
-      days.push({ date: ds, label: d.toLocaleDateString("en-GB", { day: "2-digit" }), total });
+      const expTotal = expenses.filter((e) => e.date === ds).reduce((sum, e) => sum + Number(e.amount), 0);
+      days.push({ date: ds, label: d.toLocaleDateString("en-GB", { day: "2-digit" }), total, expTotal });
     }
     return days;
-  }, [sales]);
+  }, [sales, expenses]);
   const maxDay = Math.max(1, ...last14Days.map((d) => d.total));
+  const maxFlow = Math.max(1, ...last14Days.map((d) => Math.max(d.total, d.expTotal)));
 
   return (
     <div>
@@ -817,22 +847,32 @@ function Dashboard({ customers, appointments, sales, expenses, custMap, staffMap
         </div>
       </div>
 
-      <div className="mt-5 cbl-card rounded-[24px] bg-white p-5 shadow-sm">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="cbl-heading text-base text-[#2B2320]">Sales Trend — Last 14 Days</h3>
-          <span className="text-xs text-[#2B2320]/40">Daily total, BHD</span>
+      <div className="mt-5 grid gap-5 lg:grid-cols-2">
+        <div className="cbl-card rounded-[24px] bg-white p-5 shadow-sm">
+          <div className="mb-4 flex items-center justify-between">
+            <h3 className="cbl-heading text-base text-[#2B2320]">Sales Trend — Last 14 Days</h3>
+            <span className="text-xs text-[#2B2320]/40">Daily total, BHD</span>
+          </div>
+          <div className="flex items-end gap-1.5" style={{ height: 120 }}>
+            {last14Days.map((d) => (
+              <div key={d.date} className="group flex flex-1 flex-col items-center justify-end" style={{ height: "100%" }}>
+                <div
+                  className={`w-full rounded-t transition ${d.date === today ? "bg-[#D6336C]" : "bg-[#F1C6D6] group-hover:bg-[#e79bb9]"}`}
+                  style={{ height: `${Math.max(3, (d.total / maxDay) * 100)}%` }}
+                  title={`${fmtDate(d.date)}: ${fmtMoney(d.total)}`}
+                ></div>
+                <span className="mt-1 text-[9px] text-[#2B2320]/35">{d.label}</span>
+              </div>
+            ))}
+          </div>
         </div>
-        <div className="flex items-end gap-1.5" style={{ height: 120 }}>
-          {last14Days.map((d) => (
-            <div key={d.date} className="group flex flex-1 flex-col items-center justify-end" style={{ height: "100%" }}>
-              <div
-                className={`w-full rounded-t transition ${d.date === today ? "bg-[#D6336C]" : "bg-[#F1C6D6] group-hover:bg-[#e79bb9]"}`}
-                style={{ height: `${Math.max(3, (d.total / maxDay) * 100)}%` }}
-                title={`${fmtDate(d.date)}: ${fmtMoney(d.total)}`}
-              ></div>
-              <span className="mt-1 text-[9px] text-[#2B2320]/35">{d.label}</span>
-            </div>
-          ))}
+
+        <div className="cbl-card rounded-[24px] bg-white p-5 shadow-sm">
+          <div className="mb-4 flex items-center justify-between">
+            <h3 className="cbl-heading text-base text-[#2B2320]">Cash Flow — Sales vs Expenses</h3>
+            <span className="text-xs text-[#2B2320]/40">Last 14 days</span>
+          </div>
+          <CashFlowLine days={last14Days} max={maxFlow} />
         </div>
       </div>
 
