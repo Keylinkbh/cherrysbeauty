@@ -308,18 +308,20 @@ function useSidebarTheme() {
 
 function Modal({ title, onClose, children, wide }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:p-8" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-4" onClick={onClose}>
       <div
-        className={`cbl-card mt-4 w-full ${wide ? "max-w-2xl" : "max-w-md"} rounded-2xl bg-white p-5 shadow-xl`}
+        className={`cbl-card my-8 flex max-h-[85vh] w-full ${wide ? "max-w-2xl" : "max-w-md"} flex-col rounded-2xl bg-white shadow-xl`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-4 flex items-center justify-between">
+        <div className="flex shrink-0 items-center justify-between border-b border-[#fbe8ef] p-5 pb-4">
           <h3 className="cbl-heading text-lg text-[#2B2320]">{title}</h3>
           <button onClick={onClose} className="rounded-full p-1 text-[#2B2320]/50 hover:bg-black/5">
             <AppIcon name="close" size={18} />
           </button>
         </div>
-        {children}
+        <div className="overflow-y-auto p-5 pt-4">
+          {children}
+        </div>
       </div>
     </div>
   );
@@ -621,7 +623,7 @@ export default function App({ supabase, currentUser, onLogout }) {
               {tab === "customers" && canAccess("customers") && <CustomersTab {...{ customers, setCustomers, customerStats, staff }} />}
               {tab === "appointments" && canAccess("appointments") && <AppointmentsTab {...{ appointments, setAppointments, customers, setCustomers, staff, services, custMap, staffMap, svcMap, setTab, setSales, currentUser }} />}
               {tab === "sales" && <SalesTab {...{ sales, setSales, customers, setCustomers, staff, services, custMap, staffMap, svcMap, currentUser }} />}
-              {tab === "credit" && !isStaff && <CreditTab {...{ sales, setSales, custMap, currentUser }} />}
+              {tab === "credit" && !isStaff && <CreditTab {...{ sales, setSales, custMap, customers, currentUser }} />}
               {tab === "expenses" && canAccess("expenses") && <ExpensesTab {...{ expenses, setExpenses, staff }} />}
               {tab === "suppliers" && !isStaff && <SuppliersTab {...{ suppliers, setSuppliers, purchases, supplierPayments, setTab }} />}
               {tab === "purchases" && !isStaff && <PurchasesTab {...{ purchases, setPurchases, suppliers, suppMap, supplierPayments, setSupplierPayments }} />}
@@ -1165,6 +1167,7 @@ function MiniCalendar({ appointmentsByDate, selectedDate, onSelect }) {
 function AppointmentsTab({ appointments, setAppointments, customers, setCustomers, staff, services, custMap, staffMap, svcMap, setTab, setSales, currentUser }) {
   const [date, setDate] = useState(todayStr());
   const [modal, setModal] = useState(null);
+  const isAdmin = !currentUser || currentUser.role === "admin";
 
   const dayAppts = appointments.filter(a => a.date === date).sort((a, b) => a.time.localeCompare(b.time));
   const itemsOf = (a) => a.items && a.items.length ? a.items : (a.serviceId && svcMap[a.serviceId] ? [{ name: svcMap[a.serviceId].name, price: svcMap[a.serviceId].price }] : []);
@@ -1189,7 +1192,7 @@ function AppointmentsTab({ appointments, setAppointments, customers, setCustomer
 
   function openEdit(a) {
     setModal({
-      id: a.id,
+      id: a.id, status: a.status,
       date: a.date, time: a.time, staffId: a.staffId,
       items: itemsOf(a).length ? itemsOf(a).map((it) => ({ name: it.name, price: it.price, priceTouched: true })) : [{ name: "", price: "" }],
       customerId: a.customerId, newCustomerName: "", newCustomerMobile: "", notes: a.notes || "",
@@ -1234,7 +1237,7 @@ function AppointmentsTab({ appointments, setAppointments, customers, setCustomer
     if (!modal.id && taken.has(modal.time)) { if (!window.confirm("This staff member already has an appointment at this time. Book anyway?")) return; }
 
     if (modal.id) {
-      setAppointments(appointments.map(a => a.id === modal.id ? { ...a, date: modal.date, time: modal.time, staffId: modal.staffId, items, customerId, notes: modal.notes } : a));
+      setAppointments(appointments.map(a => a.id === modal.id ? { ...a, date: modal.date, time: modal.time, staffId: modal.staffId, items, customerId, notes: modal.notes, status: modal.status || a.status } : a));
     } else {
       setAppointments([...appointments, { id: uid(), date: modal.date, time: modal.time, staffId: modal.staffId, items, customerId, status: "Booked", notes: modal.notes }]);
       sendFollowUpEmail(customerName, customerMobile, modal.date, modal.time, items.map((it) => it.name).join(", "));
@@ -1306,14 +1309,16 @@ function AppointmentsTab({ appointments, setAppointments, customers, setCustomer
                       <Td><Pill tone={a.status === "Completed" ? "green" : a.status === "Cancelled" || a.status === "No Show" ? "red" : "rose"}>{a.status}</Pill></Td>
                       <Td>
                         <div className="flex gap-1">
-                          {a.status === "Booked" && <>
+                          {(isAdmin || a.status === "Booked") && (
                             <button title="Edit" onClick={() => openEdit(a)} className="rounded p-1.5 text-[#2B2320]/50 hover:bg-black/5"><AppIcon name="edit" size={14} /></button>
+                          )}
+                          {a.status === "Booked" && <>
                             <button title="Mark completed" onClick={() => setStatus(a, "Completed")} className="rounded p-1.5 text-[#4E7C59] hover:bg-[#4E7C59]/10"><AppIcon name="check" size={14} /></button>
                             <button title="No show" onClick={() => setStatus(a, "No Show")} className="rounded p-1.5 text-[#C97B2E] hover:bg-[#C97B2E]/10"><AppIcon name="clock" size={14} /></button>
                             <button title="Cancel" onClick={() => setStatus(a, "Cancelled")} className="rounded p-1.5 text-[#B23A3A] hover:bg-[#B23A3A]/10"><AppIcon name="cancel" size={14} /></button>
                           </>}
                           {a.status === "Completed" && <Btn size="sm" variant="outline" onClick={() => convertToSale(a)}>Add to Sales</Btn>}
-                          <button onClick={() => del(a.id)} className="rounded p-1.5 text-[#B23A3A] hover:bg-[#B23A3A]/10"><AppIcon name="delete" size={14} /></button>
+                          {isAdmin && <button onClick={() => del(a.id)} className="rounded p-1.5 text-[#B23A3A] hover:bg-[#B23A3A]/10"><AppIcon name="delete" size={14} /></button>}
                         </div>
                       </Td>
                     </tr>
@@ -1328,6 +1333,13 @@ function AppointmentsTab({ appointments, setAppointments, customers, setCustomer
       {modal && (
         <Modal title={modal.id ? "Edit Appointment" : "Book Appointment"} onClose={() => setModal(null)} wide>
           <form onSubmit={save}>
+            {modal.id && isAdmin && (
+              <Field label="Status">
+                <Select value={modal.status} onChange={e => setModal({ ...modal, status: e.target.value })}>
+                  {APPT_STATUS.map(s => <option key={s} value={s}>{s}</option>)}
+                </Select>
+              </Field>
+            )}
             <Field label="Customer" required>
               <CustomerPicker customers={customers} value={modal.customerId} onChange={(id) => setModal({ ...modal, customerId: id })} />
             </Field>
@@ -1681,9 +1693,10 @@ function SalesTab({ sales, setSales, customers, setCustomers, staff, services, c
 /* CREDIT                                                               */
 /* ================================================================== */
 
-function CreditTab({ sales, setSales, custMap, currentUser }) {
+function CreditTab({ sales, setSales, custMap, customers, currentUser }) {
   const [payModal, setPayModal] = useState(null);
   const [historyId, setHistoryId] = useState(null);
+  const [oldBalModal, setOldBalModal] = useState(null);
   const unpaid = sales.filter(s => (s.amountPaid || 0) < s.amount).sort((a, b) => a.date.localeCompare(b.date));
   const total = unpaid.reduce((sum, s) => sum + (s.amount - (s.amountPaid || 0)), 0);
 
@@ -1704,11 +1717,38 @@ function CreditTab({ sales, setSales, custMap, currentUser }) {
     setPayModal(null);
   }
 
+  function openOldBalance() {
+    setOldBalModal({ customerId: "", newCustomerName: "", newCustomerMobile: "", date: todayStr(), amount: "", notes: "" });
+  }
+
+  function saveOldBalance(e) {
+    e.preventDefault();
+    const amount = Number(oldBalModal.amount);
+    if (!amount) return;
+    if (!oldBalModal.customerId) { alert("Search for the customer this old balance belongs to."); return; }
+    const invoiceNo = nextInvoiceNo(sales, oldBalModal.date);
+    setSales([...sales, {
+      id: uid(), invoiceNo, date: oldBalModal.date, customerId: oldBalModal.customerId, staffId: "",
+      description: `Opening Balance${oldBalModal.notes ? " — " + oldBalModal.notes : ""}`,
+      amount, amountPaid: 0, payments: [], addedBy: currentUser?.name || "—", isOpeningBalance: true,
+    }]);
+    setOldBalModal(null);
+  }
+
   const historySale = historyId ? sales.find((s) => s.id === historyId) : null;
 
   return (
     <div>
-      <SectionHeader title="Credit (Unpaid) Record" desc={`Outstanding: ${fmtMoney(total)} across ${unpaid.length} invoice(s)`} />
+      <SectionHeader
+        title="Credit (Unpaid) Record"
+        desc={`Outstanding: ${fmtMoney(total)} across ${unpaid.length} invoice(s)`}
+        action={<Btn variant="outline" onClick={openOldBalance}><AppIcon name="add" size={16} /> Add Old Balance</Btn>}
+      />
+      <div className="mb-4 rounded-lg bg-[#C9A15A]/10 px-3 py-2 text-xs text-[#8a6a2f]">
+        Had a customer paying more than today's service? Record today's sale as normal (paid in full), then come back
+        here and use "Record Payment" on any of their older unpaid entries to apply the extra amount to what they
+        already owed. If that older debt was never entered into the app, use "Add Old Balance" first to log it.
+      </div>
       {unpaid.length === 0 ? (
         <Empty icon="credit" text="No outstanding credit. Everyone's paid up!" />
       ) : (
@@ -1724,7 +1764,12 @@ function CreditTab({ sales, setSales, custMap, currentUser }) {
                   <tr key={s.id} className="hover:bg-[#FFF6F8]">
                     <Td className="font-mono text-xs">{s.invoiceNo || "—"}</Td>
                     <Td>{fmtDate(s.date)}</Td>
-                    <Td className="font-medium">{custMap[s.customerId]?.name}</Td>
+                    <Td className="font-medium">
+                      <div className="flex items-center gap-1.5">
+                        {custMap[s.customerId]?.name}
+                        {s.isOpeningBalance && <Pill tone="gray">Old Balance</Pill>}
+                      </div>
+                    </Td>
                     <Td>{custMap[s.customerId]?.mobile}</Td>
                     <Td>{fmtMoney(s.amount)}</Td>
                     <Td>{fmtMoney(paid)}</Td>
@@ -1777,6 +1822,24 @@ function CreditTab({ sales, setSales, custMap, currentUser }) {
             ))}
             {(historySale.payments || []).length === 0 && <p className="text-sm text-[#2B2320]/40">No payments recorded yet.</p>}
           </div>
+        </Modal>
+      )}
+
+      {oldBalModal && (
+        <Modal title="Add Old (Opening) Balance" onClose={() => setOldBalModal(null)}>
+          <p className="mb-3 text-xs text-[#2B2320]/50">
+            Use this for debt a customer already owed before you started tracking credit in this app. It'll appear
+            here just like any other unpaid invoice, so you can record payments against it — full or partial — going forward.
+          </p>
+          <form onSubmit={saveOldBalance}>
+            <Field label="Customer" required>
+              <CustomerPicker customers={customers} value={oldBalModal.customerId} onChange={(id) => setOldBalModal({ ...oldBalModal, customerId: id })} />
+            </Field>
+            <Field label="Amount Owed (BHD)" required><TextInput type="number" step="0.001" value={oldBalModal.amount} onChange={e => setOldBalModal({ ...oldBalModal, amount: e.target.value })} required /></Field>
+            <Field label="Date (when this balance started)" required><TextInput type="date" value={oldBalModal.date} onChange={e => setOldBalModal({ ...oldBalModal, date: e.target.value })} required /></Field>
+            <Field label="Notes"><TextArea value={oldBalModal.notes} onChange={e => setOldBalModal({ ...oldBalModal, notes: e.target.value })} placeholder="e.g. carried over from before, service in March" /></Field>
+            <Btn type="submit" className="w-full justify-center">Save Old Balance</Btn>
+          </form>
         </Modal>
       )}
     </div>
