@@ -371,23 +371,29 @@ function Empty({ icon, text, action }) {
   );
 }
 
-function StatCard({ label, value, icon, tone = "rose", sub }) {
-  const tones = {
-    rose: "from-[#D6336C] to-[#A61E5C]",
-    gold: "from-[#C9A15A] to-[#A9803D]",
-    green: "from-[#4E7C59] to-[#3A5E43]",
-    amber: "from-[#C97B2E] to-[#A5621F]",
-    red: "from-[#B23A3A] to-[#8E2C2C]",
+function StatCard({ label, value, icon, tone = "rose", sub, trend }) {
+  const borderTones = {
+    rose: "#D6336C", gold: "#C9A15A", green: "#4E7C59", amber: "#C97B2E", red: "#B23A3A",
+  };
+  const iconTones = {
+    rose: "bg-[#D6336C]/10 text-[#D6336C]", gold: "bg-[#C9A15A]/15 text-[#8a6a2f]",
+    green: "bg-[#4E7C59]/10 text-[#4E7C59]", amber: "bg-[#C97B2E]/10 text-[#C97B2E]", red: "bg-[#B23A3A]/10 text-[#B23A3A]",
   };
   return (
-    <div className="cbl-card relative overflow-hidden rounded-2xl bg-white p-4 shadow-sm">
-      <div className={`absolute -right-4 -top-4 h-16 w-16 rounded-full bg-gradient-to-br ${tones[tone]} opacity-10`} />
+    <div className="cbl-card rounded-xl bg-white p-4 shadow-sm" style={{ borderLeft: `3px solid ${borderTones[tone]}` }}>
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-xs font-medium uppercase tracking-wide text-[#2B2320]/45">{label}</span>
-        <div className={`rounded-lg bg-gradient-to-br ${tones[tone]} p-1.5 text-white`}><AppIcon name={icon} size={14} /></div>
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-[#2B2320]/45">{label}</span>
+        <div className={`rounded-md p-1.5 ${iconTones[tone]}`}><AppIcon name={icon} size={13} /></div>
       </div>
       <div className="cbl-heading text-xl text-[#2B2320]">{value}</div>
-      {sub && <div className="mt-0.5 text-xs text-[#2B2320]/45">{sub}</div>}
+      <div className="mt-0.5 flex items-center gap-1.5 text-xs text-[#2B2320]/45">
+        {sub && <span>{sub}</span>}
+        {trend != null && (
+          <span className={`font-medium ${trend >= 0 ? "text-[#4E7C59]" : "text-[#B23A3A]"}`}>
+            {trend >= 0 ? "▲" : "▼"} {Math.abs(trend)}%
+          </span>
+        )}
+      </div>
     </div>
   );
 }
@@ -406,11 +412,32 @@ function Pill({ children, tone = "gray" }) {
   return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${tones[tone]}`}>{children}</span>;
 }
 
+/** Simple search box that filters a list of records by any of the given text fields. No dependencies. */
+function TableSearch({ value, onChange, placeholder = "Search…" }) {
+  return (
+    <div className="mb-3 flex items-center gap-2 rounded-lg border border-[#f5d3e0] bg-white px-3 py-2 sm:max-w-xs">
+      <AppIcon name="search" size={14} className="text-[#2B2320]/40" />
+      <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="w-full bg-transparent text-sm outline-none" />
+    </div>
+  );
+}
+
+function Breadcrumb({ section }) {
+  return (
+    <div className="flex items-center gap-1.5 text-xs text-[#2B2320]/45">
+      <span>Cherrys Beauty Lounge</span>
+      <AppIcon name="chevron" size={9} />
+      <span className="font-medium text-[#2B2320]/70">{section}</span>
+    </div>
+  );
+}
+
 function SectionHeader({ title, desc, action }) {
   return (
     <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
       <div>
-        <h2 className="cbl-heading text-2xl text-[#2B2320]">{title}</h2>
+        <Breadcrumb section={title} />
+        <h2 className="cbl-heading mt-1 text-2xl text-[#2B2320]">{title}</h2>
         {desc && <p className="mt-0.5 text-sm text-[#2B2320]/50">{desc}</p>}
       </div>
       {action}
@@ -469,6 +496,7 @@ export default function App({ supabase, currentUser, onLogout }) {
   // ---- Admin notifications: fires when someone else adds a sale ----
   const [notifications, setNotifications] = useState([]);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const prevSalesIds = useRef(null);
 
   useEffect(() => {
@@ -582,7 +610,13 @@ export default function App({ supabase, currentUser, onLogout }) {
             <div className="no-print sticky top-0 z-20 flex items-center gap-3 border-b border-[#efe6e0] bg-[#FFF6F8]/90 px-4 py-3 backdrop-blur">
               <button onClick={() => setNavOpen(true)} className="rounded-lg p-2 text-[#D6336C] hover:bg-black/5 md:hidden"><AppIcon name="menu" size={20} /></button>
               <BrandMark variant="dark" className="h-6 w-auto object-contain md:hidden" />
-              <div className="ml-auto">
+
+              <div className="hidden flex-1 items-center gap-2 rounded-lg border border-[#f5d3e0] bg-white px-3 py-1.5 md:flex md:max-w-xs">
+                <AppIcon name="search" size={14} className="text-[#2B2320]/40" />
+                <span className="text-sm text-[#2B2320]/35">Search this app…</span>
+              </div>
+
+              <div className="ml-auto flex items-center gap-2">
                 {currentUser.role === "admin" && (
                   <div className="relative">
                     <button onClick={() => setNotifOpen((v) => !v)} className="relative rounded-full p-2 text-[#D6336C] hover:bg-[#D6336C]/10">
@@ -615,6 +649,23 @@ export default function App({ supabase, currentUser, onLogout }) {
                     )}
                   </div>
                 )}
+
+                <div className="relative">
+                  <button onClick={() => setUserMenuOpen((v) => !v)} className="flex items-center gap-2 rounded-full border border-[#f5d3e0] bg-white py-1 pl-1 pr-3 hover:bg-[#FFF6F8]">
+                    <div className="flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: `linear-gradient(135deg, ${sidebarTheme[0]}, ${sidebarTheme[1]})` }}>
+                      {currentUser.name.slice(0, 1).toUpperCase()}
+                    </div>
+                    <span className="hidden text-xs font-medium text-[#2B2320]/70 sm:inline">{currentUser.name}</span>
+                  </button>
+                  {userMenuOpen && (
+                    <div className="absolute right-0 z-30 mt-2 w-44 rounded-xl border border-[#f5d3e0] bg-white p-1.5 shadow-xl">
+                      <div className="px-2 py-1.5 text-xs text-[#2B2320]/40">{currentUser.role === "admin" ? "Administrator" : "Staff"}</div>
+                      <button onClick={onLogout} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-[#B23A3A] hover:bg-[#B23A3A]/5">
+                        <AppIcon name="close" size={13} /> Log out
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -686,6 +737,19 @@ function Dashboard({ customers, appointments, sales, expenses, custMap, staffMap
 
   const itemNames = (a) => (a.items && a.items.length ? a.items.map((it) => it.name).join(", ") : svcMap[a.serviceId]?.name || "Service");
 
+  const last14Days = useMemo(() => {
+    const days = [];
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const ds = d.toISOString().slice(0, 10);
+      const total = sales.filter((s) => s.date === ds).reduce((sum, s) => sum + Number(s.amount), 0);
+      days.push({ date: ds, label: d.toLocaleDateString("en-GB", { day: "2-digit" }), total });
+    }
+    return days;
+  }, [sales]);
+  const maxDay = Math.max(1, ...last14Days.map((d) => d.total));
+
   return (
     <div>
       {/* Hero banner */}
@@ -750,6 +814,25 @@ function Dashboard({ customers, appointments, sales, expenses, custMap, staffMap
           <StatCard label="Today's Appts" value={todaysAppts.length} icon="calendar" tone="gold" />
           <StatCard label="Regulars" value={regularCount} icon="star" tone="green" sub="within 30 days" />
           <StatCard label="Credit Due" value={fmtMoney(outstandingCredit)} icon="credit" tone="amber" />
+        </div>
+      </div>
+
+      <div className="mt-5 cbl-card rounded-[24px] bg-white p-5 shadow-sm">
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="cbl-heading text-base text-[#2B2320]">Sales Trend — Last 14 Days</h3>
+          <span className="text-xs text-[#2B2320]/40">Daily total, BHD</span>
+        </div>
+        <div className="flex items-end gap-1.5" style={{ height: 120 }}>
+          {last14Days.map((d) => (
+            <div key={d.date} className="group flex flex-1 flex-col items-center justify-end" style={{ height: "100%" }}>
+              <div
+                className={`w-full rounded-t transition ${d.date === today ? "bg-[#D6336C]" : "bg-[#F1C6D6] group-hover:bg-[#e79bb9]"}`}
+                style={{ height: `${Math.max(3, (d.total / maxDay) * 100)}%` }}
+                title={`${fmtDate(d.date)}: ${fmtMoney(d.total)}`}
+              ></div>
+              <span className="mt-1 text-[9px] text-[#2B2320]/35">{d.label}</span>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -1472,6 +1555,7 @@ function SalesTab({ sales, setSales, customers, setCustomers, staff, services, c
   const [modal, setModal] = useState(null);
   const [editModal, setEditModal] = useState(null);
   const [filterMode, setFilterMode] = useState("All");
+  const [search, setSearch] = useState("");
   const isAdmin = !currentUser || currentUser.role === "admin";
 
   function openAdd() {
@@ -1545,7 +1629,10 @@ function SalesTab({ sales, setSales, customers, setCustomers, staff, services, c
     setEditModal(null);
   }
 
-  const filtered = filterMode === "All" ? sales : filterMode === "Credit" ? sales.filter(s => s.amountPaid < s.amount) : sales.filter(s => (s.payments || []).some(p => p.mode === filterMode));
+  const modeFiltered = filterMode === "All" ? sales : filterMode === "Credit" ? sales.filter(s => s.amountPaid < s.amount) : sales.filter(s => (s.payments || []).some(p => p.mode === filterMode));
+  const filtered = search.trim()
+    ? modeFiltered.filter(s => (custMap[s.customerId]?.name || "").toLowerCase().includes(search.toLowerCase()) || (s.description || "").toLowerCase().includes(search.toLowerCase()) || (s.invoiceNo || "").toLowerCase().includes(search.toLowerCase()))
+    : modeFiltered;
   const sorted = [...filtered].sort((a, b) => b.date.localeCompare(a.date));
   const total = filtered.reduce((sum, s) => sum + Number(s.amount), 0);
   const byMode = PAYMENT_MODES.map(m => ({
@@ -1560,6 +1647,8 @@ function SalesTab({ sales, setSales, customers, setCustomers, staff, services, c
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {byMode.map(b => <StatCard key={b.mode} label={b.mode} value={fmtMoney(b.total)} icon="wallet" tone="rose" />)}
       </div>
+
+      <TableSearch value={search} onChange={setSearch} placeholder="Search by customer, service, or invoice #…" />
 
       <div className="mb-3 flex flex-wrap gap-2">
         {["All", ...SALE_MODES].map(m => (
@@ -1853,6 +1942,7 @@ function CreditTab({ sales, setSales, custMap, customers, currentUser }) {
 function ExpensesTab({ expenses, setExpenses, staff }) {
   const [modal, setModal] = useState(null);
   const [filter, setFilter] = useState("All");
+  const [search, setSearch] = useState("");
 
   function openAdd() { setModal({ date: todayStr(), category: EXPENSE_CATEGORIES[0], amount: "", notes: "", staffId: "", basicSalary: "", houseAllowance: "", transportAllowance: "" }); }
 
@@ -1882,13 +1972,16 @@ function ExpensesTab({ expenses, setExpenses, staff }) {
   function del(id) { if (confirmDelete("Delete this expense?")) setExpenses(expenses.filter(x => x.id !== id)); }
 
   const staffMap = Object.fromEntries((staff || []).map((s) => [s.id, s]));
-  const filtered = filter === "All" ? expenses : filter === "Government & Bills" ? expenses.filter(e => GOV_CATEGORIES.includes(e.category) || e.category === "Shop Rent" || e.category === "Electricity Bill") : expenses.filter(e => e.category === filter);
+  const catFiltered = filter === "All" ? expenses : filter === "Government & Bills" ? expenses.filter(e => GOV_CATEGORIES.includes(e.category) || e.category === "Shop Rent" || e.category === "Electricity Bill") : expenses.filter(e => e.category === filter);
+  const filtered = search.trim() ? catFiltered.filter(e => (e.notes || "").toLowerCase().includes(search.toLowerCase()) || (e.category || "").toLowerCase().includes(search.toLowerCase())) : catFiltered;
   const sorted = [...filtered].sort((a, b) => b.date.localeCompare(a.date));
   const total = sorted.reduce((sum, e) => sum + Number(e.amount), 0);
 
   return (
     <div>
       <SectionHeader title="Expenses & Bills" desc="Rent, electricity, government fees, salaries, snacks & more" action={<Btn onClick={openAdd}><AppIcon name="add" size={16} /> Add Expense</Btn>} />
+
+      <TableSearch value={search} onChange={setSearch} placeholder="Search by category or notes…" />
 
       <div className="mb-3 flex flex-wrap gap-2">
         {["All", "Government & Bills", ...EXPENSE_CATEGORIES].map(c => (
@@ -1969,6 +2062,7 @@ function ExpensesTab({ expenses, setExpenses, staff }) {
 
 function SuppliersTab({ suppliers, setSuppliers, purchases, supplierPayments, setTab }) {
   const [modal, setModal] = useState(null);
+  const [search, setSearch] = useState("");
   function openAdd() { setModal({ name: "", phone: "", address: "" }); }
   function save(e) {
     e.preventDefault();
@@ -1985,9 +2079,12 @@ function SuppliersTab({ suppliers, setSuppliers, purchases, supplierPayments, se
     return bought - paid;
   }
 
+  const filteredSuppliers = search.trim() ? suppliers.filter(s => s.name.toLowerCase().includes(search.toLowerCase()) || (s.phone || "").includes(search)) : suppliers;
+
   return (
     <div>
       <SectionHeader title="Suppliers" desc="Add suppliers here first, before recording purchases" action={<Btn onClick={openAdd}><AppIcon name="add" size={16} /> Add Supplier</Btn>} />
+      {suppliers.length > 0 && <TableSearch value={search} onChange={setSearch} placeholder="Search suppliers…" />}
       {suppliers.length === 0 ? (
         <Empty icon="truck" text="No suppliers added yet. Add a supplier before recording product purchases." action={<Btn onClick={openAdd} className="mt-3"><AppIcon name="add" size={14} /> Add Supplier</Btn>} />
       ) : (
@@ -1995,7 +2092,7 @@ function SuppliersTab({ suppliers, setSuppliers, purchases, supplierPayments, se
           <table className="w-full">
             <thead className="border-b border-[#fbe8ef]"><tr><Th>Name</Th><Th>Phone</Th><Th>Address</Th><Th>Balance Owed</Th><Th></Th></tr></thead>
             <tbody className="divide-y divide-[#fbe8ef]">
-              {suppliers.map(s => (
+              {filteredSuppliers.map(s => (
                 <tr key={s.id} className="hover:bg-[#FFF6F8]">
                   <Td className="font-medium">{s.name}</Td>
                   <Td>{s.phone}</Td>
@@ -2036,6 +2133,7 @@ function SuppliersTab({ suppliers, setSuppliers, purchases, supplierPayments, se
 function PurchasesTab({ purchases, setPurchases, suppliers, suppMap, supplierPayments, setSupplierPayments }) {
   const [modal, setModal] = useState(null);
   const [payModal, setPayModal] = useState(null);
+  const [search, setSearch] = useState("");
 
   function openAdd() {
     if (suppliers.length === 0) { alert("Add a supplier first in the Suppliers tab."); return; }
@@ -2061,7 +2159,8 @@ function PurchasesTab({ purchases, setPurchases, suppliers, suppMap, supplierPay
   }
   function delPay(id) { if (confirmDelete("Delete this payment record?")) setSupplierPayments(supplierPayments.filter(p => p.id !== id)); }
 
-  const sortedPurchases = [...purchases].sort((a, b) => b.date.localeCompare(a.date));
+  const sortedPurchases = [...purchases].sort((a, b) => b.date.localeCompare(a.date))
+    .filter(p => !search.trim() || (suppMap[p.supplierId]?.name || "").toLowerCase().includes(search.toLowerCase()) || (p.invoiceNumber || "").toLowerCase().includes(search.toLowerCase()));
   const sortedPayments = [...supplierPayments].sort((a, b) => b.date.localeCompare(a.date));
 
   return (
@@ -2069,6 +2168,8 @@ function PurchasesTab({ purchases, setPurchases, suppliers, suppMap, supplierPay
       <SectionHeader title="Product Purchases" desc="What you bought from each supplier, and what you've paid them" action={
         <div className="flex gap-2"><Btn variant="outline" onClick={openPay}><AppIcon name="cash" size={16} /> Record Payment</Btn><Btn onClick={openAdd}><AppIcon name="add" size={16} /> Add Purchase</Btn></div>
       } />
+
+      <TableSearch value={search} onChange={setSearch} placeholder="Search by supplier or invoice #…" />
 
       <h3 className="cbl-heading mb-2 text-base text-[#2B2320]">Purchases</h3>
       {sortedPurchases.length === 0 ? (
