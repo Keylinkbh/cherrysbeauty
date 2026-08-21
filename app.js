@@ -121,7 +121,7 @@ function customerStatusDot(lastVisit) {
   if (!lastVisit) return { color: "#B23A3A", label: "Not visited yet" };
   const days = daysBetween(lastVisit, todayStr());
   if (days <= 30) return { color: "#4E7C59", label: `Regular — last visit ${days}d ago` };
-  if (days <= 90) return { color: "#0D9488", label: `Slowing down — last visit ${days}d ago` };
+  if (days <= 90) return { color: "#1E3A8A", label: `Slowing down — last visit ${days}d ago` };
   return { color: "#B23A3A", label: `Not coming — last visit ${days}d ago` };
 }
 const waNumber = (mobile) => {
@@ -287,23 +287,17 @@ function BrandMark({ variant = "dark", className = "", textClassName = "" }) {
     return (
       <div className={`cbl-heading leading-tight ${variant === "light" ? "text-white" : "text-[#2B2320]"} ${textClassName}`} style={{ letterSpacing: "0.04em" }}>
         <div className="text-lg font-bold uppercase sm:text-xl">CHERRYS</div>
-        <div className={`text-[10px] uppercase tracking-[0.3em] ${variant === "light" ? "text-[#BFDBFE]" : "text-[#2554C7]"}`}>Beauty Lounge</div>
+        <div className={`text-[10px] uppercase tracking-[0.3em] ${variant === "light" ? "text-[#BFDBFE]" : "text-[#1D4ED8]"}`}>Beauty Lounge</div>
       </div>
     );
   }
   return <img src={src} alt="Cherrys Beauty Lounge" onError={() => setFailed(true)} className={className} />;
 }
 
-const SIDEBAR_THEMES = [
-  ["#2F6FE0", "#1E4FC4", "#0F172A"],
-  ["#4F46E5", "#3730A3", "#1E1B4B"],
-  ["#0EA5E9", "#0369A1", "#0C4A6E"],
-  ["#2563EB", "#1D4ED8", "#1E3A8A"],
-  ["#334155", "#1E293B", "#0F172A"],
-  ["#1D4ED8", "#1E40AF", "#172554"],
-];
+/* Single fixed royal blue theme — no randomization, consistent brand color everywhere. */
+const SIDEBAR_THEME = ["#1D4ED8", "#1E3A8A", "#172554"];
 function useSidebarTheme() {
-  return useMemo(() => SIDEBAR_THEMES[Math.floor(Math.random() * SIDEBAR_THEMES.length)], []);
+  return SIDEBAR_THEME;
 }
 
 function Modal({ title, onClose, children, wide }) {
@@ -331,14 +325,14 @@ function Field({ label, children, required }) {
   return (
     <label className="mb-3 block text-sm">
       <span className="mb-1 block font-medium text-[#2B2320]/80">
-        {label}{required && <span className="text-[#2554C7]"> *</span>}
+        {label}{required && <span className="text-[#1D4ED8]"> *</span>}
       </span>
       {children}
     </label>
   );
 }
 
-const inputCls = "w-full rounded-lg border border-[#E2E8F0] bg-[#F7F9FC] px-3 py-2 text-sm text-[#2B2320] outline-none focus:border-[#2554C7] focus:ring-1 focus:ring-[#2554C7]";
+const inputCls = "w-full rounded-lg border border-[#E2E8F0] bg-[#F7F9FC] px-3 py-2 text-sm text-[#2B2320] outline-none focus:border-[#1D4ED8] focus:ring-1 focus:ring-[#1D4ED8]";
 
 function TextInput({ className = "", ...props }) { return <input {...props} className={`${inputCls} ${className}`} />; }
 function Select({ children, className = "", ...props }) { return <select {...props} className={`${inputCls} ${className}`}>{children}</select>; }
@@ -348,12 +342,12 @@ function Btn({ children, onClick, variant = "primary", type = "button", size = "
   const base = "inline-flex items-center gap-1.5 rounded-full font-semibold transition active:scale-[0.98] shadow-sm";
   const sizes = size === "sm" ? "px-3 py-1.5 text-xs" : "px-4 py-2 text-sm";
   const variants = {
-    primary: "text-white shadow-[#2554C7]/20",
-    ghost: "bg-transparent text-[#2554C7] hover:bg-[#2554C7]/10 shadow-none",
+    primary: "text-white shadow-[#1D4ED8]/20",
+    ghost: "bg-transparent text-[#1D4ED8] hover:bg-[#1D4ED8]/10 shadow-none",
     danger: "bg-[#B23A3A]/10 text-[#B23A3A] hover:bg-[#B23A3A]/20 shadow-none",
-    outline: "border border-[#2554C7]/30 text-[#2554C7] hover:bg-[#2554C7]/5 bg-white shadow-none",
+    outline: "border border-[#1D4ED8]/30 text-[#1D4ED8] hover:bg-[#1D4ED8]/5 bg-white shadow-none",
   };
-  const style = variant === "primary" ? { background: "linear-gradient(135deg,#2554C7,#1D3FA0)" } : {};
+  const style = variant === "primary" ? { background: "linear-gradient(135deg,#1D4ED8,#1E3A8A)" } : {};
   return (
     <button type={type} onClick={onClick} style={style} className={`${base} ${sizes} ${variants[variant]} ${className}`}>
       {children}
@@ -364,7 +358,7 @@ function Btn({ children, onClick, variant = "primary", type = "button", size = "
 function Empty({ icon, text, action }) {
   return (
     <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-[#E2E8F0] py-14 text-center">
-      <AppIcon name={icon} size={28} className="mb-2 text-[#2554C7]/40" />
+      <AppIcon name={icon} size={28} className="mb-2 text-[#1D4ED8]/40" />
       <p className="text-sm text-[#2B2320]/50">{text}</p>
       {action}
     </div>
@@ -373,10 +367,10 @@ function Empty({ icon, text, action }) {
 
 function StatCard({ label, value, icon, tone = "rose", sub, trend }) {
   const borderTones = {
-    rose: "#2554C7", gold: "#0D9488", green: "#4E7C59", amber: "#C97B2E", red: "#B23A3A",
+    rose: "#1D4ED8", gold: "#1E3A8A", green: "#4E7C59", amber: "#C97B2E", red: "#B23A3A",
   };
   const iconTones = {
-    rose: "bg-[#2554C7]/10 text-[#2554C7]", gold: "bg-[#0D9488]/15 text-[#0F6B5C]",
+    rose: "bg-[#1D4ED8]/10 text-[#1D4ED8]", gold: "bg-[#1E3A8A]/15 text-[#1E3A8A]",
     green: "bg-[#4E7C59]/10 text-[#4E7C59]", amber: "bg-[#C97B2E]/10 text-[#C97B2E]", red: "bg-[#B23A3A]/10 text-[#B23A3A]",
   };
   return (
@@ -564,7 +558,7 @@ export default function App({ supabase, currentUser, onLogout }) {
 
       {!allLoaded ? (
         <div className="flex h-screen items-center justify-center">
-          <div className="flex items-center gap-2 text-[#2554C7]"><AppIcon name="sparkle" className="animate-pulse" size={20} /> Loading Cherrys Beauty Lounge…</div>
+          <div className="flex items-center gap-2 text-[#1D4ED8]"><AppIcon name="sparkle" className="animate-pulse" size={20} /> Loading Cherrys Beauty Lounge…</div>
         </div>
       ) : (
         <div className="flex">
@@ -608,7 +602,7 @@ export default function App({ supabase, currentUser, onLogout }) {
           {/* Main */}
           <main className="min-h-screen w-full flex-1 md:ml-0">
             <div className="no-print sticky top-0 z-20 flex items-center gap-3 border-b border-[#E2E8F0] bg-[#F7F9FC]/90 px-4 py-3 backdrop-blur">
-              <button onClick={() => setNavOpen(true)} className="rounded-lg p-2 text-[#2554C7] hover:bg-black/5 md:hidden"><AppIcon name="menu" size={20} /></button>
+              <button onClick={() => setNavOpen(true)} className="rounded-lg p-2 text-[#1D4ED8] hover:bg-black/5 md:hidden"><AppIcon name="menu" size={20} /></button>
               <BrandMark variant="dark" className="h-6 w-auto object-contain md:hidden" />
 
               <div className="hidden flex-1 items-center gap-2 rounded-lg border border-[#E2E8F0] bg-white px-3 py-1.5 md:flex md:max-w-xs">
@@ -619,7 +613,7 @@ export default function App({ supabase, currentUser, onLogout }) {
               <div className="ml-auto flex items-center gap-2">
                 {currentUser.role === "admin" && (
                   <div className="relative">
-                    <button onClick={() => setNotifOpen((v) => !v)} className="relative rounded-full p-2 text-[#2554C7] hover:bg-[#2554C7]/10">
+                    <button onClick={() => setNotifOpen((v) => !v)} className="relative rounded-full p-2 text-[#1D4ED8] hover:bg-[#1D4ED8]/10">
                       <AppIcon name="whatsapp" size={18} />
                       {notifications.length > 0 && (
                         <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-[#B23A3A] text-[9px] font-bold text-white">
@@ -631,7 +625,7 @@ export default function App({ supabase, currentUser, onLogout }) {
                       <div className="absolute right-0 z-30 mt-2 w-80 rounded-xl border border-[#E2E8F0] bg-white p-3 shadow-xl">
                         <div className="mb-2 flex items-center justify-between">
                           <div className="text-sm font-semibold text-[#2B2320]">Notifications</div>
-                          {notifications.length > 0 && <button onClick={() => setNotifications([])} className="text-xs text-[#2554C7]">Clear</button>}
+                          {notifications.length > 0 && <button onClick={() => setNotifications([])} className="text-xs text-[#1D4ED8]">Clear</button>}
                         </div>
                         {notifications.length === 0 ? (
                           <p className="text-xs text-[#2B2320]/50">No new activity yet — you'll see it here when staff add a sale.</p>
@@ -752,7 +746,7 @@ function Dashboard({ customers, appointments, sales, expenses, custMap, staffMap
 
   const withStatus = customers.map((c) => ({ c, dot: customerStatusDot(customerStats[c.id]?.lastVisit) }));
   const regularCount = withStatus.filter((x) => x.dot.color === "#4E7C59").length;
-  const slowingCount = withStatus.filter((x) => x.dot.color === "#0D9488" ).length;
+  const slowingCount = withStatus.filter((x) => x.dot.color === "#1E3A8A" ).length;
   const inactiveCount = withStatus.filter((x) => x.dot.color === "#B23A3A" && customerStats[x.c.id]?.lastVisit).length;
   const inactive = customers.filter(c => {
     const lv = customerStats[c.id]?.lastVisit;
@@ -783,7 +777,7 @@ function Dashboard({ customers, appointments, sales, expenses, custMap, staffMap
   return (
     <div>
       {/* Hero banner */}
-      <div className="mb-5 overflow-hidden rounded-[28px] p-6 text-white shadow-lg sm:p-7" style={{ background: "linear-gradient(120deg,#2F6FE0 0%,#1E4FC4 55%,#0F172A 100%)" }}>
+      <div className="mb-5 overflow-hidden rounded-[28px] p-6 text-white shadow-lg sm:p-7" style={{ background: "linear-gradient(120deg,#1D4ED8 0%,#1E3A8A 55%,#172554 100%)" }}>
         <div className="flex flex-wrap items-center justify-between gap-6">
           <div>
             <div className="text-xs uppercase tracking-[0.2em] text-[#BFDBFE]">Welcome back</div>
@@ -813,7 +807,7 @@ function Dashboard({ customers, appointments, sales, expenses, custMap, staffMap
           <h3 className="cbl-heading mb-4 text-base text-[#2B2320]">Customer Health</h3>
           <div className="flex items-center justify-around">
             <ProgressRing percent={regularPct} color="#4E7C59" value={regularCount} label="Regular" />
-            <ProgressRing percent={customers.length ? (slowingCount / customers.length) * 100 : 0} color="#0D9488" value={slowingCount} label="Slowing down" />
+            <ProgressRing percent={customers.length ? (slowingCount / customers.length) * 100 : 0} color="#1E3A8A" value={slowingCount} label="Slowing down" />
             <ProgressRing percent={customers.length ? (inactiveCount / customers.length) * 100 : 0} color="#B23A3A" value={inactiveCount} label="Not coming" />
           </div>
           <div className="mt-4 text-center text-xs text-[#2B2320]/45">{customers.length} total customers</div>
@@ -831,7 +825,7 @@ function Dashboard({ customers, appointments, sales, expenses, custMap, staffMap
               <span className="flex items-center gap-2 text-sm text-[#2B2320]/70"><span className="h-2 w-2 rounded-full bg-[#B23A3A]"></span>Expenses</span>
               <span className="font-semibold text-[#2B2320]">{fmtMoney(monthExpenses)}</span>
             </div>
-            <div className="flex items-center justify-between rounded-xl px-3 py-2.5 text-white" style={{ background: "linear-gradient(135deg,#2554C7,#1D3FA0)" }}>
+            <div className="flex items-center justify-between rounded-xl px-3 py-2.5 text-white" style={{ background: "linear-gradient(135deg,#1D4ED8,#1E3A8A)" }}>
               <span className="text-sm">Net Profit</span>
               <span className="cbl-heading">{fmtMoney(net)}</span>
             </div>
@@ -857,7 +851,7 @@ function Dashboard({ customers, appointments, sales, expenses, custMap, staffMap
             {last14Days.map((d) => (
               <div key={d.date} className="group flex flex-1 flex-col items-center justify-end" style={{ height: "100%" }}>
                 <div
-                  className={`w-full rounded-t transition ${d.date === today ? "bg-[#2554C7]" : "bg-[#93C5FD] group-hover:bg-[#60A5FA]"}`}
+                  className={`w-full rounded-t transition ${d.date === today ? "bg-[#1D4ED8]" : "bg-[#93C5FD] group-hover:bg-[#60A5FA]"}`}
                   style={{ height: `${Math.max(3, (d.total / maxDay) * 100)}%` }}
                   title={`${fmtDate(d.date)}: ${fmtMoney(d.total)}`}
                 ></div>
@@ -880,7 +874,7 @@ function Dashboard({ customers, appointments, sales, expenses, custMap, staffMap
         <div className="cbl-card rounded-[24px] bg-white p-5 shadow-sm">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="cbl-heading text-base text-[#2B2320]">Today's Appointments</h3>
-            <button onClick={() => setTab("appointments")} className="flex items-center text-xs font-medium text-[#2554C7]">View all <AppIcon name="chevron" size={14} /></button>
+            <button onClick={() => setTab("appointments")} className="flex items-center text-xs font-medium text-[#1D4ED8]">View all <AppIcon name="chevron" size={14} /></button>
           </div>
           {todaysAppts.length === 0 ? (
             <Empty icon="calendar" text="No appointments booked for today." />
@@ -888,7 +882,7 @@ function Dashboard({ customers, appointments, sales, expenses, custMap, staffMap
             <div className="space-y-2">
               {todaysAppts.map(a => (
                 <div key={a.id} className="flex items-center gap-3 rounded-xl bg-[#F7F9FC] px-3 py-2.5 text-sm">
-                  <div className="h-8 w-1.5 shrink-0 rounded-full" style={{ background: a.status === "Completed" ? "#4E7C59" : a.status === "Cancelled" || a.status === "No Show" ? "#B23A3A" : "#2554C7" }}></div>
+                  <div className="h-8 w-1.5 shrink-0 rounded-full" style={{ background: a.status === "Completed" ? "#4E7C59" : a.status === "Cancelled" || a.status === "No Show" ? "#B23A3A" : "#1D4ED8" }}></div>
                   <div className="flex-1">
                     <div className="font-medium text-[#2B2320]">{a.time} — {custMap[a.customerId]?.name || "Walk-in"}</div>
                     <div className="text-xs text-[#2B2320]/50">{itemNames(a)} with {staffMap[a.staffId]?.name}</div>
@@ -903,7 +897,7 @@ function Dashboard({ customers, appointments, sales, expenses, custMap, staffMap
         <div className="cbl-card rounded-[24px] bg-white p-5 shadow-sm">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="cbl-heading text-base text-[#2B2320]">Customers to Win Back</h3>
-            <button onClick={() => setTab("whatsapp")} className="flex items-center text-xs font-medium text-[#2554C7]">Send offer <AppIcon name="chevron" size={14} /></button>
+            <button onClick={() => setTab("whatsapp")} className="flex items-center text-xs font-medium text-[#1D4ED8]">Send offer <AppIcon name="chevron" size={14} /></button>
           </div>
           {inactive.length === 0 ? (
             <Empty icon="star" text="Everyone's visiting regularly — nice work!" />
@@ -1065,7 +1059,7 @@ function CustomersTab({ customers, setCustomers, customerStats, staff }) {
 
       <div className="mb-4 flex flex-wrap items-center gap-4 text-xs text-[#2B2320]/60">
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: "#4E7C59" }}></span> Regular (0–30 days)</span>
-        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: "#0D9488" }}></span> Slowing down (31–90 days)</span>
+        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: "#1E3A8A" }}></span> Slowing down (31–90 days)</span>
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: "#B23A3A" }}></span> Not coming (90+ days / never)</span>
       </div>
 
@@ -1251,7 +1245,7 @@ function MiniCalendar({ appointmentsByDate, selectedDate, onSelect }) {
     <div className="cbl-card rounded-2xl bg-white p-4 shadow-sm">
       <div className="mb-3 flex items-center justify-between">
         <button type="button" onClick={() => changeMonth(-1)} className="rounded-lg px-2 py-1 text-[#2B2320]/50 hover:bg-black/5">‹</button>
-        <button type="button" onClick={jumpToday} className="cbl-heading text-sm text-[#2B2320] hover:text-[#2554C7]">
+        <button type="button" onClick={jumpToday} className="cbl-heading text-sm text-[#2B2320] hover:text-[#1D4ED8]">
           {viewDate.toLocaleDateString("en-GB", { month: "long", year: "numeric" })}
         </button>
         <button type="button" onClick={() => changeMonth(1)} className="rounded-lg px-2 py-1 text-[#2B2320]/50 hover:bg-black/5">›</button>
@@ -1272,7 +1266,7 @@ function MiniCalendar({ appointmentsByDate, selectedDate, onSelect }) {
               key={i}
               onClick={() => onSelect(ds)}
               title={count > 0 ? `${count} appointment${count === 1 ? "" : "s"}` : "No appointments"}
-              className={`relative aspect-square rounded-lg text-xs font-medium transition ${isSelected ? "ring-2 ring-[#2554C7] ring-offset-1" : ""} ${count > 0 ? "bg-[#4E7C59] text-white hover:bg-[#3f6349]" : "bg-[#F7F9FC] text-[#2B2320]/70 hover:bg-[#EEF2F7]"} ${isToday && count === 0 ? "border border-[#2554C7] text-[#2554C7]" : ""}`}
+              className={`relative aspect-square rounded-lg text-xs font-medium transition ${isSelected ? "ring-2 ring-[#1D4ED8] ring-offset-1" : ""} ${count > 0 ? "bg-[#4E7C59] text-white hover:bg-[#3f6349]" : "bg-[#F7F9FC] text-[#2B2320]/70 hover:bg-[#EEF2F7]"} ${isToday && count === 0 ? "border border-[#1D4ED8] text-[#1D4ED8]" : ""}`}
             >
               {d}
             </button>
@@ -1281,7 +1275,7 @@ function MiniCalendar({ appointmentsByDate, selectedDate, onSelect }) {
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-3 text-[10px] text-[#2B2320]/50">
         <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded bg-[#4E7C59]"></span>Has appointments</span>
-        <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded border border-[#2554C7]"></span>Today</span>
+        <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded border border-[#1D4ED8]"></span>Today</span>
       </div>
     </div>
   );
@@ -1493,7 +1487,7 @@ function AppointmentsTab({ appointments, setAppointments, customers, setCustomer
 
             <div className="mb-1 flex items-center justify-between">
               <span className="text-sm font-medium text-[#2B2320]/80">Services</span>
-              <button type="button" onClick={addItemRow} className="text-xs font-medium text-[#2554C7]">+ Add another service</button>
+              <button type="button" onClick={addItemRow} className="text-xs font-medium text-[#1D4ED8]">+ Add another service</button>
             </div>
             <datalist id="service-suggestions">
               {services.map((s) => <option key={s.id} value={s.name} />)}
@@ -1556,7 +1550,7 @@ function CustomerPicker({ customers, value, onChange, onNewCustomer }) {
       {selected ? (
         <div className="flex items-center justify-between rounded-lg border border-[#E2E8F0] bg-[#F7F9FC] px-3 py-2 text-sm">
           <span><span className="font-medium">{selected.name}</span> — {selected.mobile}</span>
-          <button type="button" onClick={() => onChange("")} className="text-xs text-[#2554C7]">Change</button>
+          <button type="button" onClick={() => onChange("")} className="text-xs text-[#1D4ED8]">Change</button>
         </div>
       ) : (
         <>
@@ -1692,7 +1686,7 @@ function SalesTab({ sales, setSales, customers, setCustomers, staff, services, c
 
       <div className="mb-3 flex flex-wrap gap-2">
         {["All", ...SALE_MODES].map(m => (
-          <button key={m} onClick={() => setFilterMode(m)} className={`rounded-full px-3 py-1 text-xs font-medium ${filterMode === m ? "bg-[#2554C7] text-white" : "bg-white text-[#2B2320]/60 border border-[#E2E8F0]"}`}>{m}</button>
+          <button key={m} onClick={() => setFilterMode(m)} className={`rounded-full px-3 py-1 text-xs font-medium ${filterMode === m ? "bg-[#1D4ED8] text-white" : "bg-white text-[#2B2320]/60 border border-[#E2E8F0]"}`}>{m}</button>
         ))}
       </div>
 
@@ -1788,7 +1782,7 @@ function SalesTab({ sales, setSales, customers, setCustomers, staff, services, c
             <Field label="Amount (BHD)" required><TextInput type="number" step="0.001" value={editModal.amount} onChange={e => setEditModal({ ...editModal, amount: e.target.value })} required /></Field>
 
             {editModal.hasMixedPayments ? (
-              <div className="mb-3 rounded-lg bg-[#0D9488]/10 px-3 py-2 text-xs text-[#0F6B5C]">
+              <div className="mb-3 rounded-lg bg-[#1E3A8A]/10 px-3 py-2 text-xs text-[#1E3A8A]">
                 This sale has multiple payments recorded (installments) — payment mode can't be edited here to avoid disturbing that history. Manage individual payments from the Credit tab.
               </div>
             ) : (
@@ -1873,7 +1867,7 @@ function CreditTab({ sales, setSales, custMap, customers, currentUser }) {
         desc={`Outstanding: ${fmtMoney(total)} across ${unpaid.length} invoice(s)`}
         action={<Btn variant="outline" onClick={openOldBalance}><AppIcon name="add" size={16} /> Add Old Balance</Btn>}
       />
-      <div className="mb-4 rounded-lg bg-[#0D9488]/10 px-3 py-2 text-xs text-[#0F6B5C]">
+      <div className="mb-4 rounded-lg bg-[#1E3A8A]/10 px-3 py-2 text-xs text-[#1E3A8A]">
         Had a customer paying more than today's service? Record today's sale as normal (paid in full), then come back
         here and use "Record Payment" on any of their older unpaid entries to apply the extra amount to what they
         already owed. If that older debt was never entered into the app, use "Add Old Balance" first to log it.
@@ -2025,7 +2019,7 @@ function ExpensesTab({ expenses, setExpenses, staff }) {
 
       <div className="mb-3 flex flex-wrap gap-2">
         {["All", "Government & Bills", ...EXPENSE_CATEGORIES].map(c => (
-          <button key={c} onClick={() => setFilter(c)} className={`rounded-full px-3 py-1 text-xs font-medium ${filter === c ? "bg-[#2554C7] text-white" : "bg-white text-[#2B2320]/60 border border-[#E2E8F0]"}`}>{c}</button>
+          <button key={c} onClick={() => setFilter(c)} className={`rounded-full px-3 py-1 text-xs font-medium ${filter === c ? "bg-[#1D4ED8] text-white" : "bg-white text-[#2B2320]/60 border border-[#E2E8F0]"}`}>{c}</button>
         ))}
       </div>
 
@@ -2080,7 +2074,7 @@ function ExpensesTab({ expenses, setExpenses, staff }) {
                   <Field label="Transport Allowance (BHD)"><TextInput type="number" step="0.001" value={modal.transportAllowance} onChange={e => setModal({ ...modal, transportAllowance: e.target.value })} /></Field>
                 </div>
                 <div className="mb-3 rounded-lg bg-[#F7F9FC] p-3 text-sm">
-                  Total: <span className="cbl-heading text-base text-[#2554C7]">{fmtMoney(Number(modal.basicSalary || 0) + Number(modal.houseAllowance || 0) + Number(modal.transportAllowance || 0))}</span>
+                  Total: <span className="cbl-heading text-base text-[#1D4ED8]">{fmtMoney(Number(modal.basicSalary || 0) + Number(modal.houseAllowance || 0) + Number(modal.transportAllowance || 0))}</span>
                 </div>
               </>
             ) : (
@@ -2410,7 +2404,7 @@ function StaffTab({ staff, setStaff, salarySlips, setSalarySlips }) {
                   <Td className="font-semibold">{fmtMoney(s.netPay)}</Td>
                   <Td>
                     <div className="flex gap-1">
-                      <button onClick={() => setPrintSlip(s)} className="rounded p-1.5 text-[#2554C7] hover:bg-[#2554C7]/10"><AppIcon name="printer" size={14} /></button>
+                      <button onClick={() => setPrintSlip(s)} className="rounded p-1.5 text-[#1D4ED8] hover:bg-[#1D4ED8]/10"><AppIcon name="printer" size={14} /></button>
                       <button onClick={() => delSlip(s.id)} className="rounded p-1.5 text-[#B23A3A] hover:bg-[#B23A3A]/10"><AppIcon name="delete" size={14} /></button>
                     </div>
                   </Td>
@@ -2431,7 +2425,7 @@ function StaffTab({ staff, setStaff, salarySlips, setSalarySlips }) {
             <Field label="House Allowance (BHD)"><TextInput type="number" step="0.001" value={modal.houseAllowance} onChange={e => setModal({ ...modal, houseAllowance: e.target.value })} /></Field>
             <Field label="Transport Allowance (BHD)"><TextInput type="number" step="0.001" value={modal.transportAllowance} onChange={e => setModal({ ...modal, transportAllowance: e.target.value })} /></Field>
             <div className="mb-3 rounded-lg bg-[#F7F9FC] p-3 text-sm">
-              Total: <span className="cbl-heading text-base text-[#2554C7]">{fmtMoney(Number(modal.basicSalary || 0) + Number(modal.houseAllowance || 0) + Number(modal.transportAllowance || 0))}</span>
+              Total: <span className="cbl-heading text-base text-[#1D4ED8]">{fmtMoney(Number(modal.basicSalary || 0) + Number(modal.houseAllowance || 0) + Number(modal.transportAllowance || 0))}</span>
             </div>
             <Btn type="submit" className="w-full justify-center">Save Staff</Btn>
           </form>
@@ -2459,7 +2453,7 @@ function StaffTab({ staff, setStaff, salarySlips, setSalarySlips }) {
               <Field label="Deductions (BHD)"><TextInput type="number" step="0.001" value={slipModal.deductions} onChange={e => setSlipModal({ ...slipModal, deductions: e.target.value })} /></Field>
             </div>
             <div className="mb-3 rounded-lg bg-[#F7F9FC] p-3 text-sm">
-              Net Pay: <span className="cbl-heading text-base text-[#2554C7]">
+              Net Pay: <span className="cbl-heading text-base text-[#1D4ED8]">
                 {fmtMoney(Number(slipModal.basicSalary || 0) + Number(slipModal.houseAllowance || 0) + Number(slipModal.transportAllowance || 0) + Number(slipModal.bonus || 0) - Number(slipModal.deductions || 0))}
               </span>
             </div>
@@ -2618,7 +2612,7 @@ function PermissionsTab({ permissions, setPermissions }) {
                         type="checkbox"
                         checked={!!perm[t.key]}
                         onChange={() => toggle(u.username, t.key)}
-                        className="h-4 w-4 accent-[#2554C7]"
+                        className="h-4 w-4 accent-[#1D4ED8]"
                       />
                       <AppIcon name={t.icon} size={14} />
                       {t.label}
@@ -2630,7 +2624,7 @@ function PermissionsTab({ permissions, setPermissions }) {
           })}
         </div>
       )}
-      <div className="mt-4 rounded-lg bg-[#0D9488]/10 px-3 py-2 text-xs text-[#0F6B5C]">
+      <div className="mt-4 rounded-lg bg-[#1E3A8A]/10 px-3 py-2 text-xs text-[#1E3A8A]">
         Changes apply the next time that staff member opens or reloads the app.
       </div>
     </div>
@@ -2722,7 +2716,7 @@ function ReportsTab({ sales, expenses, custMap, suppliers, suppMap, purchases, s
               <div className="rounded-xl bg-[#4E7C59]/10 p-3 text-center"><div className="text-[10px] uppercase text-[#2B2320]/50">Sales</div><div className="cbl-heading text-[#4E7C59]">{fmtMoney(combined.salesTotal)}</div></div>
               <div className="rounded-xl bg-[#B23A3A]/10 p-3 text-center"><div className="text-[10px] uppercase text-[#2B2320]/50">Expenses</div><div className="cbl-heading text-[#B23A3A]">{fmtMoney(combined.expensesTotal)}</div></div>
               <div className="rounded-xl bg-[#C97B2E]/10 p-3 text-center"><div className="text-[10px] uppercase text-[#2B2320]/50">Supplier Payments</div><div className="cbl-heading text-[#C97B2E]">{fmtMoney(combined.paymentsTotal)}</div></div>
-              <div className="rounded-xl bg-[#2554C7]/10 p-3 text-center"><div className="text-[10px] uppercase text-[#2B2320]/50">Purchases</div><div className="cbl-heading text-[#2554C7]">{fmtMoney(combined.purchasesTotal)}</div></div>
+              <div className="rounded-xl bg-[#1D4ED8]/10 p-3 text-center"><div className="text-[10px] uppercase text-[#2B2320]/50">Purchases</div><div className="cbl-heading text-[#1D4ED8]">{fmtMoney(combined.purchasesTotal)}</div></div>
             </div>
 
             {[
@@ -2895,7 +2889,7 @@ function WhatsAppTab({ customers, customerStats }) {
     <div>
       <SectionHeader title="WhatsApp Offers" desc="Compose one message, then send it to each selected customer's WhatsApp" />
 
-      <div className="mb-4 rounded-lg bg-[#0D9488]/10 px-3 py-2 text-xs text-[#0F6B5C]">
+      <div className="mb-4 rounded-lg bg-[#1E3A8A]/10 px-3 py-2 text-xs text-[#1E3A8A]">
         True one-click bulk WhatsApp broadcasting needs the official WhatsApp Business API (Meta business verification + a paid provider). Without that, each message below opens as a pre-filled WhatsApp chat you tap "Send" on — fast, but one tap per customer rather than one tap for everyone.
       </div>
 
@@ -2903,7 +2897,7 @@ function WhatsAppTab({ customers, customerStats }) {
         <Field label="Offer Message"><TextArea value={message} onChange={e => setMessage(e.target.value)} className="min-h-[90px]" /></Field>
         <div className="flex flex-wrap gap-2">
           {[["all", "All Customers"], ["regular", "Regular Customers"], ["inactive", "Inactive 30+ days"]].map(([k, l]) => (
-            <button key={k} onClick={() => setAudience(k)} className={`rounded-full px-3 py-1 text-xs font-medium ${audience === k ? "bg-[#2554C7] text-white" : "bg-white text-[#2B2320]/60 border border-[#E2E8F0]"}`}>{l}</button>
+            <button key={k} onClick={() => setAudience(k)} className={`rounded-full px-3 py-1 text-xs font-medium ${audience === k ? "bg-[#1D4ED8] text-white" : "bg-white text-[#2B2320]/60 border border-[#E2E8F0]"}`}>{l}</button>
           ))}
         </div>
       </div>
@@ -2966,14 +2960,14 @@ function LoginScreen({ onLogin }) {
   return (
     <div
       className="flex min-h-screen items-center justify-center px-4"
-      style={{ background: "radial-gradient(1200px 700px at 15% 10%, #3B82F6 0%, transparent 55%), radial-gradient(1000px 700px at 90% 90%, #172554 0%, transparent 55%), linear-gradient(160deg,#2F6FE0 0%,#1E4FC4 45%,#0B1220 100%)" }}
+      style={{ background: "radial-gradient(1200px 700px at 15% 10%, #3B82F6 0%, transparent 55%), radial-gradient(1000px 700px at 90% 90%, #172554 0%, transparent 55%), linear-gradient(160deg,#1D4ED8 0%,#1E3A8A 45%,#172554 100%)" }}
     >
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;500;600;700&display=swap');`}</style>
       <form onSubmit={submit} className="relative w-full max-w-sm rounded-[28px] bg-white/95 p-8 text-center shadow-2xl backdrop-blur">
         <div className="pointer-events-none absolute inset-3 rounded-[20px] border border-[#93C5FD]/50"></div>
         <BrandMark variant="dark" className="mx-auto mb-2 h-12 w-auto object-contain" />
         <div className="cbl-heading mb-5 text-sm uppercase tracking-[0.15em] text-[#2B2320]">Cherrys Beauty Lounge</div>
-        <div className="mx-auto mb-5 h-px w-16 bg-gradient-to-r from-transparent via-[#2554C7] to-transparent"></div>
+        <div className="mx-auto mb-5 h-px w-16 bg-gradient-to-r from-transparent via-[#1D4ED8] to-transparent"></div>
         <p className="mb-6 text-xs uppercase tracking-[0.2em] text-[#2B2320]/40" style={{ fontFamily: "'Playfair Display', serif" }}>Staff Sign In</p>
 
         <div className="mb-3 text-left">
@@ -2983,7 +2977,7 @@ function LoginScreen({ onLogin }) {
             onChange={(e) => { setUsername(e.target.value); setErr(false); }}
             autoFocus
             autoCapitalize="none"
-            className="w-full rounded-lg border border-[#E2E8F0] bg-[#F7F9FC] px-3 py-2.5 text-sm outline-none focus:border-[#2554C7]"
+            className="w-full rounded-lg border border-[#E2E8F0] bg-[#F7F9FC] px-3 py-2.5 text-sm outline-none focus:border-[#1D4ED8]"
             placeholder="e.g. staff1"
           />
         </div>
@@ -2994,11 +2988,11 @@ function LoginScreen({ onLogin }) {
             inputMode="numeric"
             value={pin}
             onChange={(e) => { setPin(e.target.value); setErr(false); }}
-            className="w-full rounded-lg border border-[#E2E8F0] bg-[#F7F9FC] px-3 py-2.5 text-center text-lg tracking-[0.4em] outline-none focus:border-[#2554C7]"
+            className="w-full rounded-lg border border-[#E2E8F0] bg-[#F7F9FC] px-3 py-2.5 text-center text-lg tracking-[0.4em] outline-none focus:border-[#1D4ED8]"
           />
         </div>
         {err && <p className="mb-3 text-xs text-[#B23A3A]">Username or PIN not recognized.</p>}
-        <button type="submit" className="w-full rounded-lg py-2.5 text-sm font-medium text-white shadow-md" style={{ background: "linear-gradient(135deg,#2554C7,#1D3FA0)" }}>
+        <button type="submit" className="w-full rounded-lg py-2.5 text-sm font-medium text-white shadow-md" style={{ background: "linear-gradient(135deg,#1D4ED8,#1E3A8A)" }}>
           Sign In
         </button>
         <p className="mt-5 text-[10px] text-[#2B2320]/30">Cherrys Beauty Lounge · Internal Team Access</p>
