@@ -2,7 +2,7 @@
 // as a real app icon and reopens instantly. Data still requires an
 // internet connection, since it lives in Supabase, not on the device.
 
-const CACHE = "cherrys-shell-v1";
+const CACHE = "cherrys-shell-v2";
 const SHELL = ["./", "./index.html", "./config.js", "./app.js", "./manifest.json", "./icon-192.png", "./icon-512.png", "./assets/logo-dark-text.png", "./assets/logo-light-text.png"];
 
 self.addEventListener("install", (event) => {

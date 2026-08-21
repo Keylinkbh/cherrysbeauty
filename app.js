@@ -121,7 +121,7 @@ function customerStatusDot(lastVisit) {
   if (!lastVisit) return { color: "#B23A3A", label: "Not visited yet" };
   const days = daysBetween(lastVisit, todayStr());
   if (days <= 30) return { color: "#4E7C59", label: `Regular — last visit ${days}d ago` };
-  if (days <= 90) return { color: "#C9A15A", label: `Slowing down — last visit ${days}d ago` };
+  if (days <= 90) return { color: "#0D9488", label: `Slowing down — last visit ${days}d ago` };
   return { color: "#B23A3A", label: `Not coming — last visit ${days}d ago` };
 }
 const waNumber = (mobile) => {
@@ -287,7 +287,7 @@ function BrandMark({ variant = "dark", className = "", textClassName = "" }) {
     return (
       <div className={`cbl-heading leading-tight ${variant === "light" ? "text-white" : "text-[#2B2320]"} ${textClassName}`} style={{ letterSpacing: "0.04em" }}>
         <div className="text-lg font-bold uppercase sm:text-xl">CHERRYS</div>
-        <div className={`text-[10px] uppercase tracking-[0.3em] ${variant === "light" ? "text-[#F5DBA0]" : "text-[#D6336C]"}`}>Beauty Lounge</div>
+        <div className={`text-[10px] uppercase tracking-[0.3em] ${variant === "light" ? "text-[#BFDBFE]" : "text-[#2554C7]"}`}>Beauty Lounge</div>
       </div>
     );
   }
@@ -295,12 +295,12 @@ function BrandMark({ variant = "dark", className = "", textClassName = "" }) {
 }
 
 const SIDEBAR_THEMES = [
-  ["#E0447C", "#B0225F", "#5C1140"],
-  ["#7C3AED", "#5B21B6", "#2E1065"],
-  ["#0D9488", "#0F766E", "#134E4A"],
-  ["#EA580C", "#C2410C", "#7C2D12"],
+  ["#2F6FE0", "#1E4FC4", "#0F172A"],
+  ["#4F46E5", "#3730A3", "#1E1B4B"],
+  ["#0EA5E9", "#0369A1", "#0C4A6E"],
+  ["#2563EB", "#1D4ED8", "#1E3A8A"],
   ["#334155", "#1E293B", "#0F172A"],
-  ["#BE185D", "#9D174D", "#500724"],
+  ["#1D4ED8", "#1E40AF", "#172554"],
 ];
 function useSidebarTheme() {
   return useMemo(() => SIDEBAR_THEMES[Math.floor(Math.random() * SIDEBAR_THEMES.length)], []);
@@ -313,7 +313,7 @@ function Modal({ title, onClose, children, wide }) {
         className={`cbl-card my-8 flex max-h-[85vh] w-full ${wide ? "max-w-2xl" : "max-w-md"} flex-col rounded-2xl bg-white shadow-xl`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex shrink-0 items-center justify-between border-b border-[#fbe8ef] p-5 pb-4">
+        <div className="flex shrink-0 items-center justify-between border-b border-[#EEF2F7] p-5 pb-4">
           <h3 className="cbl-heading text-lg text-[#2B2320]">{title}</h3>
           <button onClick={onClose} className="rounded-full p-1 text-[#2B2320]/50 hover:bg-black/5">
             <AppIcon name="close" size={18} />
@@ -331,14 +331,14 @@ function Field({ label, children, required }) {
   return (
     <label className="mb-3 block text-sm">
       <span className="mb-1 block font-medium text-[#2B2320]/80">
-        {label}{required && <span className="text-[#D6336C]"> *</span>}
+        {label}{required && <span className="text-[#2554C7]"> *</span>}
       </span>
       {children}
     </label>
   );
 }
 
-const inputCls = "w-full rounded-lg border border-[#f5d3e0] bg-[#FFF6F8] px-3 py-2 text-sm text-[#2B2320] outline-none focus:border-[#D6336C] focus:ring-1 focus:ring-[#D6336C]";
+const inputCls = "w-full rounded-lg border border-[#E2E8F0] bg-[#F7F9FC] px-3 py-2 text-sm text-[#2B2320] outline-none focus:border-[#2554C7] focus:ring-1 focus:ring-[#2554C7]";
 
 function TextInput({ className = "", ...props }) { return <input {...props} className={`${inputCls} ${className}`} />; }
 function Select({ children, className = "", ...props }) { return <select {...props} className={`${inputCls} ${className}`}>{children}</select>; }
@@ -348,12 +348,12 @@ function Btn({ children, onClick, variant = "primary", type = "button", size = "
   const base = "inline-flex items-center gap-1.5 rounded-full font-semibold transition active:scale-[0.98] shadow-sm";
   const sizes = size === "sm" ? "px-3 py-1.5 text-xs" : "px-4 py-2 text-sm";
   const variants = {
-    primary: "text-white shadow-[#D6336C]/20",
-    ghost: "bg-transparent text-[#D6336C] hover:bg-[#D6336C]/10 shadow-none",
+    primary: "text-white shadow-[#2554C7]/20",
+    ghost: "bg-transparent text-[#2554C7] hover:bg-[#2554C7]/10 shadow-none",
     danger: "bg-[#B23A3A]/10 text-[#B23A3A] hover:bg-[#B23A3A]/20 shadow-none",
-    outline: "border border-[#D6336C]/30 text-[#D6336C] hover:bg-[#D6336C]/5 bg-white shadow-none",
+    outline: "border border-[#2554C7]/30 text-[#2554C7] hover:bg-[#2554C7]/5 bg-white shadow-none",
   };
-  const style = variant === "primary" ? { background: "linear-gradient(135deg,#D6336C,#A61E5C)" } : {};
+  const style = variant === "primary" ? { background: "linear-gradient(135deg,#2554C7,#1D3FA0)" } : {};
   return (
     <button type={type} onClick={onClick} style={style} className={`${base} ${sizes} ${variants[variant]} ${className}`}>
       {children}
@@ -363,8 +363,8 @@ function Btn({ children, onClick, variant = "primary", type = "button", size = "
 
 function Empty({ icon, text, action }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-[#f5d3e0] py-14 text-center">
-      <AppIcon name={icon} size={28} className="mb-2 text-[#D6336C]/40" />
+    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-[#E2E8F0] py-14 text-center">
+      <AppIcon name={icon} size={28} className="mb-2 text-[#2554C7]/40" />
       <p className="text-sm text-[#2B2320]/50">{text}</p>
       {action}
     </div>
@@ -373,10 +373,10 @@ function Empty({ icon, text, action }) {
 
 function StatCard({ label, value, icon, tone = "rose", sub, trend }) {
   const borderTones = {
-    rose: "#D6336C", gold: "#C9A15A", green: "#4E7C59", amber: "#C97B2E", red: "#B23A3A",
+    rose: "#2554C7", gold: "#0D9488", green: "#4E7C59", amber: "#C97B2E", red: "#B23A3A",
   };
   const iconTones = {
-    rose: "bg-[#D6336C]/10 text-[#D6336C]", gold: "bg-[#C9A15A]/15 text-[#8a6a2f]",
+    rose: "bg-[#2554C7]/10 text-[#2554C7]", gold: "bg-[#0D9488]/15 text-[#0F6B5C]",
     green: "bg-[#4E7C59]/10 text-[#4E7C59]", amber: "bg-[#C97B2E]/10 text-[#C97B2E]", red: "bg-[#B23A3A]/10 text-[#B23A3A]",
   };
   return (
@@ -403,11 +403,11 @@ function Td({ children, className = "", ...rest }) { return <td {...rest} classN
 
 function Pill({ children, tone = "gray" }) {
   const tones = {
-    gray: "bg-[#F1E9EC] text-[#5c5257]",
+    gray: "bg-[#EEF1F5] text-[#475569]",
     green: "bg-[#E3F0E6] text-[#2E5236]",
     red: "bg-[#FBE4E4] text-[#8E2C2C]",
     amber: "bg-[#FBEBDA] text-[#8a4f10]",
-    rose: "bg-[#FCE2EC] text-[#9c1a52]",
+    rose: "bg-[#DBEAFE] text-[#1D4ED8]",
   };
   return <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold ${tones[tone]}`}>{children}</span>;
 }
@@ -415,7 +415,7 @@ function Pill({ children, tone = "gray" }) {
 /** Simple search box that filters a list of records by any of the given text fields. No dependencies. */
 function TableSearch({ value, onChange, placeholder = "Search…" }) {
   return (
-    <div className="mb-3 flex items-center gap-2 rounded-lg border border-[#f5d3e0] bg-white px-3 py-2 sm:max-w-xs">
+    <div className="mb-3 flex items-center gap-2 rounded-lg border border-[#E2E8F0] bg-white px-3 py-2 sm:max-w-xs">
       <AppIcon name="search" size={14} className="text-[#2B2320]/40" />
       <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="w-full bg-transparent text-sm outline-none" />
     </div>
@@ -547,12 +547,12 @@ export default function App({ supabase, currentUser, onLogout }) {
   const nav = allLoaded ? tab : "loading";
 
   return (
-    <div className="cbl-root min-h-screen w-full" style={{ background: "radial-gradient(1200px 600px at 100% -10%, #FDEFF4 0%, transparent 60%), radial-gradient(900px 500px at -10% 10%, #FCE9F1 0%, transparent 55%), #FFF9FA" }}>
+    <div className="cbl-root min-h-screen w-full" style={{ background: "radial-gradient(1200px 600px at 100% -10%, #E8F0FE 0%, transparent 60%), radial-gradient(900px 500px at -10% 10%, #E8F0FE 0%, transparent 55%), #F7F9FC" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;500;600;700&display=swap');
         .cbl-root { font-family: 'Inter', sans-serif; }
         .cbl-heading { font-family: 'Playfair Display', serif; }
-        .cbl-card { border: 1px solid #f6e1ea; box-shadow: 0 1px 2px rgba(214,51,108,0.04); }
+        .cbl-card { border: 1px solid #E2E8F0; box-shadow: 0 1px 2px rgba(214,51,108,0.04); }
         @media print {
           @page { size: A4; margin: 12mm; }
           body * { visibility: hidden; }
@@ -564,7 +564,7 @@ export default function App({ supabase, currentUser, onLogout }) {
 
       {!allLoaded ? (
         <div className="flex h-screen items-center justify-center">
-          <div className="flex items-center gap-2 text-[#D6336C]"><AppIcon name="sparkle" className="animate-pulse" size={20} /> Loading Cherrys Beauty Lounge…</div>
+          <div className="flex items-center gap-2 text-[#2554C7]"><AppIcon name="sparkle" className="animate-pulse" size={20} /> Loading Cherrys Beauty Lounge…</div>
         </div>
       ) : (
         <div className="flex">
@@ -595,7 +595,7 @@ export default function App({ supabase, currentUser, onLogout }) {
               <div className="mb-3 flex items-center justify-between">
                 <div>
                   <div className="text-sm font-semibold">{currentUser.name}</div>
-                  <div className="text-[10px] uppercase tracking-wide text-[#E8C888]">{currentUser.role}</div>
+                  <div className="text-[10px] uppercase tracking-wide text-[#93C5FD]">{currentUser.role}</div>
                 </div>
               </div>
               <button onClick={onLogout} className="flex w-full items-center justify-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-xs font-medium hover:bg-white/20">
@@ -607,11 +607,11 @@ export default function App({ supabase, currentUser, onLogout }) {
 
           {/* Main */}
           <main className="min-h-screen w-full flex-1 md:ml-0">
-            <div className="no-print sticky top-0 z-20 flex items-center gap-3 border-b border-[#efe6e0] bg-[#FFF6F8]/90 px-4 py-3 backdrop-blur">
-              <button onClick={() => setNavOpen(true)} className="rounded-lg p-2 text-[#D6336C] hover:bg-black/5 md:hidden"><AppIcon name="menu" size={20} /></button>
+            <div className="no-print sticky top-0 z-20 flex items-center gap-3 border-b border-[#E2E8F0] bg-[#F7F9FC]/90 px-4 py-3 backdrop-blur">
+              <button onClick={() => setNavOpen(true)} className="rounded-lg p-2 text-[#2554C7] hover:bg-black/5 md:hidden"><AppIcon name="menu" size={20} /></button>
               <BrandMark variant="dark" className="h-6 w-auto object-contain md:hidden" />
 
-              <div className="hidden flex-1 items-center gap-2 rounded-lg border border-[#f5d3e0] bg-white px-3 py-1.5 md:flex md:max-w-xs">
+              <div className="hidden flex-1 items-center gap-2 rounded-lg border border-[#E2E8F0] bg-white px-3 py-1.5 md:flex md:max-w-xs">
                 <AppIcon name="search" size={14} className="text-[#2B2320]/40" />
                 <span className="text-sm text-[#2B2320]/35">Search this app…</span>
               </div>
@@ -619,7 +619,7 @@ export default function App({ supabase, currentUser, onLogout }) {
               <div className="ml-auto flex items-center gap-2">
                 {currentUser.role === "admin" && (
                   <div className="relative">
-                    <button onClick={() => setNotifOpen((v) => !v)} className="relative rounded-full p-2 text-[#D6336C] hover:bg-[#D6336C]/10">
+                    <button onClick={() => setNotifOpen((v) => !v)} className="relative rounded-full p-2 text-[#2554C7] hover:bg-[#2554C7]/10">
                       <AppIcon name="whatsapp" size={18} />
                       {notifications.length > 0 && (
                         <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-[#B23A3A] text-[9px] font-bold text-white">
@@ -628,17 +628,17 @@ export default function App({ supabase, currentUser, onLogout }) {
                       )}
                     </button>
                     {notifOpen && (
-                      <div className="absolute right-0 z-30 mt-2 w-80 rounded-xl border border-[#f5d3e0] bg-white p-3 shadow-xl">
+                      <div className="absolute right-0 z-30 mt-2 w-80 rounded-xl border border-[#E2E8F0] bg-white p-3 shadow-xl">
                         <div className="mb-2 flex items-center justify-between">
                           <div className="text-sm font-semibold text-[#2B2320]">Notifications</div>
-                          {notifications.length > 0 && <button onClick={() => setNotifications([])} className="text-xs text-[#D6336C]">Clear</button>}
+                          {notifications.length > 0 && <button onClick={() => setNotifications([])} className="text-xs text-[#2554C7]">Clear</button>}
                         </div>
                         {notifications.length === 0 ? (
                           <p className="text-xs text-[#2B2320]/50">No new activity yet — you'll see it here when staff add a sale.</p>
                         ) : (
                           <div className="max-h-72 space-y-2 overflow-y-auto">
                             {notifications.map((n) => (
-                              <div key={n.id + n.time} className="rounded-lg bg-[#FFF6F8] p-2 text-xs">
+                              <div key={n.id + n.time} className="rounded-lg bg-[#F7F9FC] p-2 text-xs">
                                 <div className="text-[#2B2320]/80">{n.text}</div>
                                 <div className="mt-0.5 text-[10px] text-[#2B2320]/40">{new Date(n.time).toLocaleTimeString()}</div>
                               </div>
@@ -651,14 +651,14 @@ export default function App({ supabase, currentUser, onLogout }) {
                 )}
 
                 <div className="relative">
-                  <button onClick={() => setUserMenuOpen((v) => !v)} className="flex items-center gap-2 rounded-full border border-[#f5d3e0] bg-white py-1 pl-1 pr-3 hover:bg-[#FFF6F8]">
+                  <button onClick={() => setUserMenuOpen((v) => !v)} className="flex items-center gap-2 rounded-full border border-[#E2E8F0] bg-white py-1 pl-1 pr-3 hover:bg-[#F7F9FC]">
                     <div className="flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: `linear-gradient(135deg, ${sidebarTheme[0]}, ${sidebarTheme[1]})` }}>
                       {currentUser.name.slice(0, 1).toUpperCase()}
                     </div>
                     <span className="hidden text-xs font-medium text-[#2B2320]/70 sm:inline">{currentUser.name}</span>
                   </button>
                   {userMenuOpen && (
-                    <div className="absolute right-0 z-30 mt-2 w-44 rounded-xl border border-[#f5d3e0] bg-white p-1.5 shadow-xl">
+                    <div className="absolute right-0 z-30 mt-2 w-44 rounded-xl border border-[#E2E8F0] bg-white p-1.5 shadow-xl">
                       <div className="px-2 py-1.5 text-xs text-[#2B2320]/40">{currentUser.role === "admin" ? "Administrator" : "Staff"}</div>
                       <button onClick={onLogout} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-[#B23A3A] hover:bg-[#B23A3A]/5">
                         <AppIcon name="close" size={13} /> Log out
@@ -701,7 +701,7 @@ function ProgressRing({ percent, color, size = 84, label, value }) {
     <div className="flex flex-col items-center">
       <div
         className="relative flex items-center justify-center rounded-full"
-        style={{ width: size, height: size, background: `conic-gradient(${color} ${clamped * 3.6}deg, #F1E3E9 0deg)` }}
+        style={{ width: size, height: size, background: `conic-gradient(${color} ${clamped * 3.6}deg, #E5E9F5 0deg)` }}
       >
         <div className="flex flex-col items-center justify-center rounded-full bg-white" style={{ width: size - 14, height: size - 14 }}>
           <span className="cbl-heading text-base text-[#2B2320]">{value}</span>
@@ -752,7 +752,7 @@ function Dashboard({ customers, appointments, sales, expenses, custMap, staffMap
 
   const withStatus = customers.map((c) => ({ c, dot: customerStatusDot(customerStats[c.id]?.lastVisit) }));
   const regularCount = withStatus.filter((x) => x.dot.color === "#4E7C59").length;
-  const slowingCount = withStatus.filter((x) => x.dot.color === "#C9A15A" ).length;
+  const slowingCount = withStatus.filter((x) => x.dot.color === "#0D9488" ).length;
   const inactiveCount = withStatus.filter((x) => x.dot.color === "#B23A3A" && customerStats[x.c.id]?.lastVisit).length;
   const inactive = customers.filter(c => {
     const lv = customerStats[c.id]?.lastVisit;
@@ -783,10 +783,10 @@ function Dashboard({ customers, appointments, sales, expenses, custMap, staffMap
   return (
     <div>
       {/* Hero banner */}
-      <div className="mb-5 overflow-hidden rounded-[28px] p-6 text-white shadow-lg sm:p-7" style={{ background: "linear-gradient(120deg,#E0447C 0%,#B0225F 55%,#5C1140 100%)" }}>
+      <div className="mb-5 overflow-hidden rounded-[28px] p-6 text-white shadow-lg sm:p-7" style={{ background: "linear-gradient(120deg,#2F6FE0 0%,#1E4FC4 55%,#0F172A 100%)" }}>
         <div className="flex flex-wrap items-center justify-between gap-6">
           <div>
-            <div className="text-xs uppercase tracking-[0.2em] text-[#F5DBA0]">Welcome back</div>
+            <div className="text-xs uppercase tracking-[0.2em] text-[#BFDBFE]">Welcome back</div>
             <h2 className="cbl-heading mt-1 text-2xl uppercase tracking-wide sm:text-3xl">Cherrys Beauty Lounge</h2>
             <div className="mt-1 text-sm text-white/70">{fmtDate(today)}</div>
           </div>
@@ -813,14 +813,14 @@ function Dashboard({ customers, appointments, sales, expenses, custMap, staffMap
           <h3 className="cbl-heading mb-4 text-base text-[#2B2320]">Customer Health</h3>
           <div className="flex items-center justify-around">
             <ProgressRing percent={regularPct} color="#4E7C59" value={regularCount} label="Regular" />
-            <ProgressRing percent={customers.length ? (slowingCount / customers.length) * 100 : 0} color="#C9A15A" value={slowingCount} label="Slowing down" />
+            <ProgressRing percent={customers.length ? (slowingCount / customers.length) * 100 : 0} color="#0D9488" value={slowingCount} label="Slowing down" />
             <ProgressRing percent={customers.length ? (inactiveCount / customers.length) * 100 : 0} color="#B23A3A" value={inactiveCount} label="Not coming" />
           </div>
           <div className="mt-4 text-center text-xs text-[#2B2320]/45">{customers.length} total customers</div>
         </div>
 
         {/* Money card */}
-        <div className="cbl-card rounded-[24px] p-5 shadow-sm" style={{ background: "linear-gradient(160deg,#FFF6F8,#FCE9F1)" }}>
+        <div className="cbl-card rounded-[24px] p-5 shadow-sm" style={{ background: "linear-gradient(160deg,#F7F9FC,#E8F0FE)" }}>
           <h3 className="cbl-heading mb-4 text-base text-[#2B2320]">This Month</h3>
           <div className="space-y-3">
             <div className="flex items-center justify-between rounded-xl bg-white/70 px-3 py-2.5">
@@ -831,7 +831,7 @@ function Dashboard({ customers, appointments, sales, expenses, custMap, staffMap
               <span className="flex items-center gap-2 text-sm text-[#2B2320]/70"><span className="h-2 w-2 rounded-full bg-[#B23A3A]"></span>Expenses</span>
               <span className="font-semibold text-[#2B2320]">{fmtMoney(monthExpenses)}</span>
             </div>
-            <div className="flex items-center justify-between rounded-xl px-3 py-2.5 text-white" style={{ background: "linear-gradient(135deg,#D6336C,#A61E5C)" }}>
+            <div className="flex items-center justify-between rounded-xl px-3 py-2.5 text-white" style={{ background: "linear-gradient(135deg,#2554C7,#1D3FA0)" }}>
               <span className="text-sm">Net Profit</span>
               <span className="cbl-heading">{fmtMoney(net)}</span>
             </div>
@@ -857,7 +857,7 @@ function Dashboard({ customers, appointments, sales, expenses, custMap, staffMap
             {last14Days.map((d) => (
               <div key={d.date} className="group flex flex-1 flex-col items-center justify-end" style={{ height: "100%" }}>
                 <div
-                  className={`w-full rounded-t transition ${d.date === today ? "bg-[#D6336C]" : "bg-[#F1C6D6] group-hover:bg-[#e79bb9]"}`}
+                  className={`w-full rounded-t transition ${d.date === today ? "bg-[#2554C7]" : "bg-[#93C5FD] group-hover:bg-[#60A5FA]"}`}
                   style={{ height: `${Math.max(3, (d.total / maxDay) * 100)}%` }}
                   title={`${fmtDate(d.date)}: ${fmtMoney(d.total)}`}
                 ></div>
@@ -880,15 +880,15 @@ function Dashboard({ customers, appointments, sales, expenses, custMap, staffMap
         <div className="cbl-card rounded-[24px] bg-white p-5 shadow-sm">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="cbl-heading text-base text-[#2B2320]">Today's Appointments</h3>
-            <button onClick={() => setTab("appointments")} className="flex items-center text-xs font-medium text-[#D6336C]">View all <AppIcon name="chevron" size={14} /></button>
+            <button onClick={() => setTab("appointments")} className="flex items-center text-xs font-medium text-[#2554C7]">View all <AppIcon name="chevron" size={14} /></button>
           </div>
           {todaysAppts.length === 0 ? (
             <Empty icon="calendar" text="No appointments booked for today." />
           ) : (
             <div className="space-y-2">
               {todaysAppts.map(a => (
-                <div key={a.id} className="flex items-center gap-3 rounded-xl bg-[#FFF6F8] px-3 py-2.5 text-sm">
-                  <div className="h-8 w-1.5 shrink-0 rounded-full" style={{ background: a.status === "Completed" ? "#4E7C59" : a.status === "Cancelled" || a.status === "No Show" ? "#B23A3A" : "#D6336C" }}></div>
+                <div key={a.id} className="flex items-center gap-3 rounded-xl bg-[#F7F9FC] px-3 py-2.5 text-sm">
+                  <div className="h-8 w-1.5 shrink-0 rounded-full" style={{ background: a.status === "Completed" ? "#4E7C59" : a.status === "Cancelled" || a.status === "No Show" ? "#B23A3A" : "#2554C7" }}></div>
                   <div className="flex-1">
                     <div className="font-medium text-[#2B2320]">{a.time} — {custMap[a.customerId]?.name || "Walk-in"}</div>
                     <div className="text-xs text-[#2B2320]/50">{itemNames(a)} with {staffMap[a.staffId]?.name}</div>
@@ -903,14 +903,14 @@ function Dashboard({ customers, appointments, sales, expenses, custMap, staffMap
         <div className="cbl-card rounded-[24px] bg-white p-5 shadow-sm">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="cbl-heading text-base text-[#2B2320]">Customers to Win Back</h3>
-            <button onClick={() => setTab("whatsapp")} className="flex items-center text-xs font-medium text-[#D6336C]">Send offer <AppIcon name="chevron" size={14} /></button>
+            <button onClick={() => setTab("whatsapp")} className="flex items-center text-xs font-medium text-[#2554C7]">Send offer <AppIcon name="chevron" size={14} /></button>
           </div>
           {inactive.length === 0 ? (
             <Empty icon="star" text="Everyone's visiting regularly — nice work!" />
           ) : (
             <div className="space-y-2">
               {inactive.slice(0, 8).map(c => (
-                <div key={c.id} className="flex items-center gap-3 rounded-xl bg-[#FFF6F8] px-3 py-2.5 text-sm">
+                <div key={c.id} className="flex items-center gap-3 rounded-xl bg-[#F7F9FC] px-3 py-2.5 text-sm">
                   <div className="h-8 w-1.5 shrink-0 rounded-full bg-[#C97B2E]"></div>
                   <div className="flex-1">
                     <div className="font-medium text-[#2B2320]">{c.name}</div>
@@ -1058,14 +1058,14 @@ function CustomersTab({ customers, setCustomers, customerStats, staff }) {
         }
       />
 
-      <div className="mb-4 flex items-center gap-2 rounded-lg border border-[#f5d3e0] bg-white px-3 py-2">
+      <div className="mb-4 flex items-center gap-2 rounded-lg border border-[#E2E8F0] bg-white px-3 py-2">
         <AppIcon name="search" size={16} className="text-[#2B2320]/40" />
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or mobile…" className="w-full bg-transparent text-sm outline-none" />
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-4 text-xs text-[#2B2320]/60">
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: "#4E7C59" }}></span> Regular (0–30 days)</span>
-        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: "#C9A15A" }}></span> Slowing down (31–90 days)</span>
+        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: "#0D9488" }}></span> Slowing down (31–90 days)</span>
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: "#B23A3A" }}></span> Not coming (90+ days / never)</span>
       </div>
 
@@ -1074,15 +1074,15 @@ function CustomersTab({ customers, setCustomers, customerStats, staff }) {
       ) : (
         <div className="cbl-card overflow-x-auto rounded-2xl bg-white shadow-sm">
           <table className="w-full">
-            <thead className="border-b border-[#fbe8ef]"><tr>
+            <thead className="border-b border-[#EEF2F7]"><tr>
               <Th>Name</Th><Th>Mobile</Th><Th>Tags</Th><Th>Visits</Th><Th>Last Visit</Th><Th>Next Appt.</Th><Th></Th>
             </tr></thead>
-            <tbody className="divide-y divide-[#fbe8ef]">
+            <tbody className="divide-y divide-[#EEF2F7]">
               {filtered.map(c => {
                 const st = customerStats[c.id] || {};
                 const dot = customerStatusDot(st.lastVisit);
                 return (
-                  <tr key={c.id} className="hover:bg-[#FFF6F8] cursor-pointer" onClick={() => setDetailId(c.id)}>
+                  <tr key={c.id} className="hover:bg-[#F7F9FC] cursor-pointer" onClick={() => setDetailId(c.id)}>
                     <Td className="font-medium text-[#2B2320]">
                       <span className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: dot.color }} title={dot.label}></span>
                       {c.name}
@@ -1144,7 +1144,7 @@ function CustomersTab({ customers, setCustomers, customerStats, staff }) {
           </Field>
 
           {importModal.raw && (
-            <div className="mb-3 rounded-lg bg-[#FFF6F8] p-3">
+            <div className="mb-3 rounded-lg bg-[#F7F9FC] p-3">
               <div className="mb-2 text-sm font-medium text-[#2B2320]">
                 {importModal.rows.length} new contact{importModal.rows.length === 1 ? "" : "s"} ready to import
               </div>
@@ -1190,14 +1190,14 @@ function CustomerDetail({ customer, onClose, onSave, stats }) {
   return (
     <Modal title={customer.name} onClose={onClose} wide>
       <div className="mb-4 grid grid-cols-3 gap-3 text-center">
-        <div className="rounded-lg bg-[#FFF6F8] p-2"><div className="cbl-heading text-lg">{stats?.visits || 0}</div><div className="text-[10px] uppercase text-[#2B2320]/45">Visits</div></div>
-        <div className="rounded-lg bg-[#FFF6F8] p-2"><div className="cbl-heading text-sm">{stats?.lastVisit ? fmtDate(stats.lastVisit) : "Never"}</div><div className="text-[10px] uppercase text-[#2B2320]/45">Last Visit</div></div>
-        <div className="rounded-lg bg-[#FFF6F8] p-2"><div className="cbl-heading text-sm">{stats?.nextAppt ? fmtDate(stats.nextAppt.date) : "—"}</div><div className="text-[10px] uppercase text-[#2B2320]/45">Next Appt.</div></div>
+        <div className="rounded-lg bg-[#F7F9FC] p-2"><div className="cbl-heading text-lg">{stats?.visits || 0}</div><div className="text-[10px] uppercase text-[#2B2320]/45">Visits</div></div>
+        <div className="rounded-lg bg-[#F7F9FC] p-2"><div className="cbl-heading text-sm">{stats?.lastVisit ? fmtDate(stats.lastVisit) : "Never"}</div><div className="text-[10px] uppercase text-[#2B2320]/45">Last Visit</div></div>
+        <div className="rounded-lg bg-[#F7F9FC] p-2"><div className="cbl-heading text-sm">{stats?.nextAppt ? fmtDate(stats.nextAppt.date) : "—"}</div><div className="text-[10px] uppercase text-[#2B2320]/45">Next Appt.</div></div>
       </div>
       <div className="mb-2 flex items-center gap-2 text-sm text-[#2B2320]/70"><AppIcon name="phone" size={14} /> {customer.mobile}
         <a href={waLink(customer.mobile, `Hi ${customer.name}, this is Cherrys Beauty Lounge!`)} target="_blank" rel="noreferrer" className="ml-auto rounded-full bg-[#4E7C59]/10 px-3 py-1 text-xs font-medium text-[#4E7C59]">Message on WhatsApp</a>
       </div>
-      {customer.notes && <p className="mb-3 rounded-lg bg-[#FFF6F8] p-2 text-sm text-[#2B2320]/70">{customer.notes}</p>}
+      {customer.notes && <p className="mb-3 rounded-lg bg-[#F7F9FC] p-2 text-sm text-[#2B2320]/70">{customer.notes}</p>}
 
       <h4 className="cbl-heading mb-2 text-sm text-[#2B2320]">Conversation / Visit Notes</h4>
       <div className="mb-2 flex gap-2">
@@ -1207,7 +1207,7 @@ function CustomerDetail({ customer, onClose, onSave, stats }) {
       <div className="max-h-40 space-y-2 overflow-y-auto">
         {log.length === 0 && <p className="text-xs text-[#2B2320]/40">No notes logged yet.</p>}
         {log.map((l, i) => (
-          <div key={i} className="rounded-lg bg-[#FFF6F8] p-2 text-xs">
+          <div key={i} className="rounded-lg bg-[#F7F9FC] p-2 text-xs">
             <div className="text-[#2B2320]/40">{new Date(l.date).toLocaleString()}</div>
             <div className="text-[#2B2320]/80">{l.text}</div>
           </div>
@@ -1251,7 +1251,7 @@ function MiniCalendar({ appointmentsByDate, selectedDate, onSelect }) {
     <div className="cbl-card rounded-2xl bg-white p-4 shadow-sm">
       <div className="mb-3 flex items-center justify-between">
         <button type="button" onClick={() => changeMonth(-1)} className="rounded-lg px-2 py-1 text-[#2B2320]/50 hover:bg-black/5">‹</button>
-        <button type="button" onClick={jumpToday} className="cbl-heading text-sm text-[#2B2320] hover:text-[#D6336C]">
+        <button type="button" onClick={jumpToday} className="cbl-heading text-sm text-[#2B2320] hover:text-[#2554C7]">
           {viewDate.toLocaleDateString("en-GB", { month: "long", year: "numeric" })}
         </button>
         <button type="button" onClick={() => changeMonth(1)} className="rounded-lg px-2 py-1 text-[#2B2320]/50 hover:bg-black/5">›</button>
@@ -1272,7 +1272,7 @@ function MiniCalendar({ appointmentsByDate, selectedDate, onSelect }) {
               key={i}
               onClick={() => onSelect(ds)}
               title={count > 0 ? `${count} appointment${count === 1 ? "" : "s"}` : "No appointments"}
-              className={`relative aspect-square rounded-lg text-xs font-medium transition ${isSelected ? "ring-2 ring-[#D6336C] ring-offset-1" : ""} ${count > 0 ? "bg-[#4E7C59] text-white hover:bg-[#3f6349]" : "bg-[#FFF6F8] text-[#2B2320]/70 hover:bg-[#fbe8ef]"} ${isToday && count === 0 ? "border border-[#D6336C] text-[#D6336C]" : ""}`}
+              className={`relative aspect-square rounded-lg text-xs font-medium transition ${isSelected ? "ring-2 ring-[#2554C7] ring-offset-1" : ""} ${count > 0 ? "bg-[#4E7C59] text-white hover:bg-[#3f6349]" : "bg-[#F7F9FC] text-[#2B2320]/70 hover:bg-[#EEF2F7]"} ${isToday && count === 0 ? "border border-[#2554C7] text-[#2554C7]" : ""}`}
             >
               {d}
             </button>
@@ -1281,7 +1281,7 @@ function MiniCalendar({ appointmentsByDate, selectedDate, onSelect }) {
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-3 text-[10px] text-[#2B2320]/50">
         <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded bg-[#4E7C59]"></span>Has appointments</span>
-        <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded border border-[#D6336C]"></span>Today</span>
+        <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded border border-[#2554C7]"></span>Today</span>
       </div>
     </div>
   );
@@ -1417,12 +1417,12 @@ function AppointmentsTab({ appointments, setAppointments, customers, setCustomer
           ) : (
             <div className="cbl-card overflow-x-auto rounded-2xl bg-white shadow-sm">
               <table className="w-full">
-                <thead className="border-b border-[#fbe8ef]"><tr>
+                <thead className="border-b border-[#EEF2F7]"><tr>
                   <Th>Time</Th><Th>Customer</Th><Th>Mobile</Th><Th>Service(s)</Th><Th>Total</Th><Th>Staff</Th><Th>Status</Th><Th></Th>
                 </tr></thead>
-                <tbody className="divide-y divide-[#fbe8ef]">
+                <tbody className="divide-y divide-[#EEF2F7]">
                   {dayAppts.map(a => (
-                    <tr key={a.id} className="hover:bg-[#FFF6F8]">
+                    <tr key={a.id} className="hover:bg-[#F7F9FC]">
                       <Td className="font-medium">{a.time}</Td>
                       <Td>{custMap[a.customerId]?.name || "—"}</Td>
                       <Td>{custMap[a.customerId]?.mobile}</Td>
@@ -1467,7 +1467,7 @@ function AppointmentsTab({ appointments, setAppointments, customers, setCustomer
               <CustomerPicker customers={customers} value={modal.customerId} onChange={(id) => setModal({ ...modal, customerId: id })} />
             </Field>
             {!modal.customerId && (
-              <div className="mb-3 grid grid-cols-2 gap-3 rounded-lg bg-[#FFF6F8] p-3">
+              <div className="mb-3 grid grid-cols-2 gap-3 rounded-lg bg-[#F7F9FC] p-3">
                 <Field label="New Customer Name"><TextInput value={modal.newCustomerName} onChange={e => setModal({ ...modal, newCustomerName: e.target.value })} /></Field>
                 <Field label="New Customer Mobile"><TextInput value={modal.newCustomerMobile} onChange={e => setModal({ ...modal, newCustomerMobile: e.target.value })} /></Field>
               </div>
@@ -1493,7 +1493,7 @@ function AppointmentsTab({ appointments, setAppointments, customers, setCustomer
 
             <div className="mb-1 flex items-center justify-between">
               <span className="text-sm font-medium text-[#2B2320]/80">Services</span>
-              <button type="button" onClick={addItemRow} className="text-xs font-medium text-[#D6336C]">+ Add another service</button>
+              <button type="button" onClick={addItemRow} className="text-xs font-medium text-[#2554C7]">+ Add another service</button>
             </div>
             <datalist id="service-suggestions">
               {services.map((s) => <option key={s.id} value={s.name} />)}
@@ -1554,9 +1554,9 @@ function CustomerPicker({ customers, value, onChange, onNewCustomer }) {
   return (
     <div className="relative">
       {selected ? (
-        <div className="flex items-center justify-between rounded-lg border border-[#f5d3e0] bg-[#FFF6F8] px-3 py-2 text-sm">
+        <div className="flex items-center justify-between rounded-lg border border-[#E2E8F0] bg-[#F7F9FC] px-3 py-2 text-sm">
           <span><span className="font-medium">{selected.name}</span> — {selected.mobile}</span>
-          <button type="button" onClick={() => onChange("")} className="text-xs text-[#D6336C]">Change</button>
+          <button type="button" onClick={() => onChange("")} className="text-xs text-[#2554C7]">Change</button>
         </div>
       ) : (
         <>
@@ -1567,7 +1567,7 @@ function CustomerPicker({ customers, value, onChange, onNewCustomer }) {
             placeholder="Search by name or mobile…"
           />
           {open && query.trim() && (
-            <div className="absolute z-20 mt-1 w-full rounded-lg border border-[#f5d3e0] bg-white shadow-lg">
+            <div className="absolute z-20 mt-1 w-full rounded-lg border border-[#E2E8F0] bg-white shadow-lg">
               {results.length === 0 ? (
                 <div className="p-3 text-sm text-[#2B2320]/50">No match — you can add them as a new customer below.</div>
               ) : (
@@ -1576,7 +1576,7 @@ function CustomerPicker({ customers, value, onChange, onNewCustomer }) {
                     key={c.id}
                     type="button"
                     onClick={() => { onChange(c.id); setOpen(false); }}
-                    className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-[#FFF6F8]"
+                    className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-[#F7F9FC]"
                   >
                     <span className="font-medium">{c.name}</span>
                     <span className="text-[#2B2320]/50">{c.mobile}</span>
@@ -1692,7 +1692,7 @@ function SalesTab({ sales, setSales, customers, setCustomers, staff, services, c
 
       <div className="mb-3 flex flex-wrap gap-2">
         {["All", ...SALE_MODES].map(m => (
-          <button key={m} onClick={() => setFilterMode(m)} className={`rounded-full px-3 py-1 text-xs font-medium ${filterMode === m ? "bg-[#D6336C] text-white" : "bg-white text-[#2B2320]/60 border border-[#f5d3e0]"}`}>{m}</button>
+          <button key={m} onClick={() => setFilterMode(m)} className={`rounded-full px-3 py-1 text-xs font-medium ${filterMode === m ? "bg-[#2554C7] text-white" : "bg-white text-[#2B2320]/60 border border-[#E2E8F0]"}`}>{m}</button>
         ))}
       </div>
 
@@ -1701,15 +1701,15 @@ function SalesTab({ sales, setSales, customers, setCustomers, staff, services, c
       ) : (
         <div className="cbl-card overflow-x-auto rounded-2xl bg-white shadow-sm">
           <table className="w-full">
-            <thead className="border-b border-[#fbe8ef]"><tr>
+            <thead className="border-b border-[#EEF2F7]"><tr>
               <Th>Invoice #</Th><Th>Date</Th><Th>Customer</Th><Th>Service</Th><Th>Staff</Th><Th>Amount</Th><Th>Status</Th><Th>Added By</Th><Th></Th>
             </tr></thead>
-            <tbody className="divide-y divide-[#fbe8ef]">
+            <tbody className="divide-y divide-[#EEF2F7]">
               {sorted.map(s => {
                 const balance = s.amount - (s.amountPaid || 0);
                 const status = balance <= 0 ? "Paid" : (s.amountPaid || 0) > 0 ? "Partial" : "Credit";
                 return (
-                  <tr key={s.id} className="hover:bg-[#FFF6F8]">
+                  <tr key={s.id} className="hover:bg-[#F7F9FC]">
                     <Td className="font-mono text-xs">{s.invoiceNo || "—"}</Td>
                     <Td>{fmtDate(s.date)}</Td>
                     <Td className="font-medium">{custMap[s.customerId]?.name || "—"}</Td>
@@ -1730,7 +1730,7 @@ function SalesTab({ sales, setSales, customers, setCustomers, staff, services, c
                 );
               })}
             </tbody>
-            <tfoot><tr className="border-t border-[#fbe8ef] font-semibold"><Td colSpan={5}>Total</Td><Td>{fmtMoney(total)}</Td><Td /><Td /><Td /></tr></tfoot>
+            <tfoot><tr className="border-t border-[#EEF2F7] font-semibold"><Td colSpan={5}>Total</Td><Td>{fmtMoney(total)}</Td><Td /><Td /><Td /></tr></tfoot>
           </table>
         </div>
       )}
@@ -1743,7 +1743,7 @@ function SalesTab({ sales, setSales, customers, setCustomers, staff, services, c
               <CustomerPicker customers={customers} value={modal.customerId} onChange={(id) => setModal({ ...modal, customerId: id })} />
             </Field>
             {!modal.customerId && (
-              <div className="mb-3 grid grid-cols-2 gap-3 rounded-lg bg-[#FFF6F8] p-3">
+              <div className="mb-3 grid grid-cols-2 gap-3 rounded-lg bg-[#F7F9FC] p-3">
                 <Field label="New Customer Name"><TextInput value={modal.newCustomerName} onChange={e => setModal({ ...modal, newCustomerName: e.target.value })} /></Field>
                 <Field label="New Customer Mobile"><TextInput value={modal.newCustomerMobile} onChange={e => setModal({ ...modal, newCustomerMobile: e.target.value })} /></Field>
               </div>
@@ -1788,7 +1788,7 @@ function SalesTab({ sales, setSales, customers, setCustomers, staff, services, c
             <Field label="Amount (BHD)" required><TextInput type="number" step="0.001" value={editModal.amount} onChange={e => setEditModal({ ...editModal, amount: e.target.value })} required /></Field>
 
             {editModal.hasMixedPayments ? (
-              <div className="mb-3 rounded-lg bg-[#C9A15A]/10 px-3 py-2 text-xs text-[#8a6a2f]">
+              <div className="mb-3 rounded-lg bg-[#0D9488]/10 px-3 py-2 text-xs text-[#0F6B5C]">
                 This sale has multiple payments recorded (installments) — payment mode can't be edited here to avoid disturbing that history. Manage individual payments from the Credit tab.
               </div>
             ) : (
@@ -1873,7 +1873,7 @@ function CreditTab({ sales, setSales, custMap, customers, currentUser }) {
         desc={`Outstanding: ${fmtMoney(total)} across ${unpaid.length} invoice(s)`}
         action={<Btn variant="outline" onClick={openOldBalance}><AppIcon name="add" size={16} /> Add Old Balance</Btn>}
       />
-      <div className="mb-4 rounded-lg bg-[#C9A15A]/10 px-3 py-2 text-xs text-[#8a6a2f]">
+      <div className="mb-4 rounded-lg bg-[#0D9488]/10 px-3 py-2 text-xs text-[#0F6B5C]">
         Had a customer paying more than today's service? Record today's sale as normal (paid in full), then come back
         here and use "Record Payment" on any of their older unpaid entries to apply the extra amount to what they
         already owed. If that older debt was never entered into the app, use "Add Old Balance" first to log it.
@@ -1883,14 +1883,14 @@ function CreditTab({ sales, setSales, custMap, customers, currentUser }) {
       ) : (
         <div className="cbl-card overflow-x-auto rounded-2xl bg-white shadow-sm">
           <table className="w-full">
-            <thead className="border-b border-[#fbe8ef]"><tr><Th>Invoice #</Th><Th>Date</Th><Th>Customer</Th><Th>Mobile</Th><Th>Total</Th><Th>Paid</Th><Th>Balance</Th><Th>Status</Th><Th>Days</Th><Th></Th></tr></thead>
-            <tbody className="divide-y divide-[#fbe8ef]">
+            <thead className="border-b border-[#EEF2F7]"><tr><Th>Invoice #</Th><Th>Date</Th><Th>Customer</Th><Th>Mobile</Th><Th>Total</Th><Th>Paid</Th><Th>Balance</Th><Th>Status</Th><Th>Days</Th><Th></Th></tr></thead>
+            <tbody className="divide-y divide-[#EEF2F7]">
               {unpaid.map(s => {
                 const paid = s.amountPaid || 0;
                 const balance = s.amount - paid;
                 const status = paid > 0 ? "Partial" : "Unpaid";
                 return (
-                  <tr key={s.id} className="hover:bg-[#FFF6F8]">
+                  <tr key={s.id} className="hover:bg-[#F7F9FC]">
                     <Td className="font-mono text-xs">{s.invoiceNo || "—"}</Td>
                     <Td>{fmtDate(s.date)}</Td>
                     <Td className="font-medium">
@@ -1944,7 +1944,7 @@ function CreditTab({ sales, setSales, custMap, customers, currentUser }) {
           </div>
           <div className="space-y-2">
             {(historySale.payments || []).map((p, i) => (
-              <div key={i} className="flex items-center justify-between rounded-lg bg-[#FFF6F8] px-3 py-2 text-sm">
+              <div key={i} className="flex items-center justify-between rounded-lg bg-[#F7F9FC] px-3 py-2 text-sm">
                 <span>{fmtDate(p.date)} — {p.mode}{p.recordedBy ? ` (by ${p.recordedBy})` : ""}</span>
                 <span className="font-medium">{fmtMoney(p.amount)}</span>
               </div>
@@ -2025,7 +2025,7 @@ function ExpensesTab({ expenses, setExpenses, staff }) {
 
       <div className="mb-3 flex flex-wrap gap-2">
         {["All", "Government & Bills", ...EXPENSE_CATEGORIES].map(c => (
-          <button key={c} onClick={() => setFilter(c)} className={`rounded-full px-3 py-1 text-xs font-medium ${filter === c ? "bg-[#D6336C] text-white" : "bg-white text-[#2B2320]/60 border border-[#f5d3e0]"}`}>{c}</button>
+          <button key={c} onClick={() => setFilter(c)} className={`rounded-full px-3 py-1 text-xs font-medium ${filter === c ? "bg-[#2554C7] text-white" : "bg-white text-[#2B2320]/60 border border-[#E2E8F0]"}`}>{c}</button>
         ))}
       </div>
 
@@ -2034,10 +2034,10 @@ function ExpensesTab({ expenses, setExpenses, staff }) {
       ) : (
         <div className="cbl-card overflow-x-auto rounded-2xl bg-white shadow-sm">
           <table className="w-full">
-            <thead className="border-b border-[#fbe8ef]"><tr><Th>Date</Th><Th>Category</Th><Th>Details</Th><Th>Amount</Th><Th>Notes</Th><Th></Th></tr></thead>
-            <tbody className="divide-y divide-[#fbe8ef]">
+            <thead className="border-b border-[#EEF2F7]"><tr><Th>Date</Th><Th>Category</Th><Th>Details</Th><Th>Amount</Th><Th>Notes</Th><Th></Th></tr></thead>
+            <tbody className="divide-y divide-[#EEF2F7]">
               {sorted.map(e => (
-                <tr key={e.id} className="hover:bg-[#FFF6F8]">
+                <tr key={e.id} className="hover:bg-[#F7F9FC]">
                   <Td>{fmtDate(e.date)}</Td>
                   <Td><Pill tone={GOV_CATEGORIES.includes(e.category) ? "amber" : "gray"}>{e.category}</Pill></Td>
                   <Td className="text-xs text-[#2B2320]/60">
@@ -2051,7 +2051,7 @@ function ExpensesTab({ expenses, setExpenses, staff }) {
                 </tr>
               ))}
             </tbody>
-            <tfoot><tr className="border-t border-[#fbe8ef] font-semibold"><Td>Total</Td><Td /><Td /><Td>{fmtMoney(total)}</Td><Td /><Td /></tr></tfoot>
+            <tfoot><tr className="border-t border-[#EEF2F7] font-semibold"><Td>Total</Td><Td /><Td /><Td>{fmtMoney(total)}</Td><Td /><Td /></tr></tfoot>
           </table>
         </div>
       )}
@@ -2079,8 +2079,8 @@ function ExpensesTab({ expenses, setExpenses, staff }) {
                   <Field label="House Allowance (BHD)"><TextInput type="number" step="0.001" value={modal.houseAllowance} onChange={e => setModal({ ...modal, houseAllowance: e.target.value })} /></Field>
                   <Field label="Transport Allowance (BHD)"><TextInput type="number" step="0.001" value={modal.transportAllowance} onChange={e => setModal({ ...modal, transportAllowance: e.target.value })} /></Field>
                 </div>
-                <div className="mb-3 rounded-lg bg-[#FFF6F8] p-3 text-sm">
-                  Total: <span className="cbl-heading text-base text-[#D6336C]">{fmtMoney(Number(modal.basicSalary || 0) + Number(modal.houseAllowance || 0) + Number(modal.transportAllowance || 0))}</span>
+                <div className="mb-3 rounded-lg bg-[#F7F9FC] p-3 text-sm">
+                  Total: <span className="cbl-heading text-base text-[#2554C7]">{fmtMoney(Number(modal.basicSalary || 0) + Number(modal.houseAllowance || 0) + Number(modal.transportAllowance || 0))}</span>
                 </div>
               </>
             ) : (
@@ -2130,10 +2130,10 @@ function SuppliersTab({ suppliers, setSuppliers, purchases, supplierPayments, se
       ) : (
         <div className="cbl-card overflow-x-auto rounded-2xl bg-white shadow-sm">
           <table className="w-full">
-            <thead className="border-b border-[#fbe8ef]"><tr><Th>Name</Th><Th>Phone</Th><Th>Address</Th><Th>Balance Owed</Th><Th></Th></tr></thead>
-            <tbody className="divide-y divide-[#fbe8ef]">
+            <thead className="border-b border-[#EEF2F7]"><tr><Th>Name</Th><Th>Phone</Th><Th>Address</Th><Th>Balance Owed</Th><Th></Th></tr></thead>
+            <tbody className="divide-y divide-[#EEF2F7]">
               {filteredSuppliers.map(s => (
-                <tr key={s.id} className="hover:bg-[#FFF6F8]">
+                <tr key={s.id} className="hover:bg-[#F7F9FC]">
                   <Td className="font-medium">{s.name}</Td>
                   <Td>{s.phone}</Td>
                   <Td>{s.address}</Td>
@@ -2217,10 +2217,10 @@ function PurchasesTab({ purchases, setPurchases, suppliers, suppMap, supplierPay
       ) : (
         <div className="cbl-card mb-6 overflow-x-auto rounded-2xl bg-white shadow-sm">
           <table className="w-full">
-            <thead className="border-b border-[#fbe8ef]"><tr><Th>Invoice Date</Th><Th>Entered On</Th><Th>Supplier</Th><Th>Invoice #</Th><Th>Amount</Th><Th>Items</Th><Th></Th></tr></thead>
-            <tbody className="divide-y divide-[#fbe8ef]">
+            <thead className="border-b border-[#EEF2F7]"><tr><Th>Invoice Date</Th><Th>Entered On</Th><Th>Supplier</Th><Th>Invoice #</Th><Th>Amount</Th><Th>Items</Th><Th></Th></tr></thead>
+            <tbody className="divide-y divide-[#EEF2F7]">
               {sortedPurchases.map(p => (
-                <tr key={p.id} className="hover:bg-[#FFF6F8]">
+                <tr key={p.id} className="hover:bg-[#F7F9FC]">
                   <Td>{fmtDate(p.invoiceDate || p.date)}</Td>
                   <Td>{fmtDate(p.inputDate || p.date)}</Td>
                   <Td className="font-medium">{suppMap[p.supplierId]?.name || "—"}</Td>
@@ -2241,10 +2241,10 @@ function PurchasesTab({ purchases, setPurchases, suppliers, suppMap, supplierPay
       ) : (
         <div className="cbl-card overflow-x-auto rounded-2xl bg-white shadow-sm">
           <table className="w-full">
-            <thead className="border-b border-[#fbe8ef]"><tr><Th>Payment Date</Th><Th>Invoice Date</Th><Th>Supplier</Th><Th>Amount</Th><Th>Mode</Th><Th>Reference</Th><Th></Th></tr></thead>
-            <tbody className="divide-y divide-[#fbe8ef]">
+            <thead className="border-b border-[#EEF2F7]"><tr><Th>Payment Date</Th><Th>Invoice Date</Th><Th>Supplier</Th><Th>Amount</Th><Th>Mode</Th><Th>Reference</Th><Th></Th></tr></thead>
+            <tbody className="divide-y divide-[#EEF2F7]">
               {sortedPayments.map(p => (
-                <tr key={p.id} className="hover:bg-[#FFF6F8]">
+                <tr key={p.id} className="hover:bg-[#F7F9FC]">
                   <Td>{fmtDate(p.date)}</Td>
                   <Td>{fmtDate(p.invoiceDate || p.date)}</Td>
                   <Td className="font-medium">{suppMap[p.supplierId]?.name || "—"}</Td>
@@ -2367,10 +2367,10 @@ function StaffTab({ staff, setStaff, salarySlips, setSalarySlips }) {
       ) : (
         <div className="cbl-card mb-6 overflow-x-auto rounded-2xl bg-white shadow-sm">
           <table className="w-full">
-            <thead className="border-b border-[#fbe8ef]"><tr><Th>Name</Th><Th>Role</Th><Th>Mobile</Th><Th>Basic</Th><Th>House Allow.</Th><Th>Transport Allow.</Th><Th>Total</Th><Th></Th></tr></thead>
-            <tbody className="divide-y divide-[#fbe8ef]">
+            <thead className="border-b border-[#EEF2F7]"><tr><Th>Name</Th><Th>Role</Th><Th>Mobile</Th><Th>Basic</Th><Th>House Allow.</Th><Th>Transport Allow.</Th><Th>Total</Th><Th></Th></tr></thead>
+            <tbody className="divide-y divide-[#EEF2F7]">
               {staff.map(s => (
-                <tr key={s.id} className="hover:bg-[#FFF6F8]">
+                <tr key={s.id} className="hover:bg-[#F7F9FC]">
                   <Td className="font-medium">{s.name}</Td>
                   <Td>{s.role}</Td>
                   <Td>{s.mobile}</Td>
@@ -2398,10 +2398,10 @@ function StaffTab({ staff, setStaff, salarySlips, setSalarySlips }) {
       ) : (
         <div className="cbl-card overflow-x-auto rounded-2xl bg-white shadow-sm">
           <table className="w-full">
-            <thead className="border-b border-[#fbe8ef]"><tr><Th>Staff</Th><Th>Month</Th><Th>Gross</Th><Th>Bonus</Th><Th>Deductions</Th><Th>Net Pay</Th><Th></Th></tr></thead>
-            <tbody className="divide-y divide-[#fbe8ef]">
+            <thead className="border-b border-[#EEF2F7]"><tr><Th>Staff</Th><Th>Month</Th><Th>Gross</Th><Th>Bonus</Th><Th>Deductions</Th><Th>Net Pay</Th><Th></Th></tr></thead>
+            <tbody className="divide-y divide-[#EEF2F7]">
               {sortedSlips.map(s => (
-                <tr key={s.id} className="hover:bg-[#FFF6F8]">
+                <tr key={s.id} className="hover:bg-[#F7F9FC]">
                   <Td className="font-medium">{staffMap[s.staffId]?.name || "—"}</Td>
                   <Td>{monthLabel(s.month, s.year)}</Td>
                   <Td>{fmtMoney(Number(s.basicSalary || 0) + Number(s.houseAllowance || 0) + Number(s.transportAllowance || 0))}</Td>
@@ -2410,7 +2410,7 @@ function StaffTab({ staff, setStaff, salarySlips, setSalarySlips }) {
                   <Td className="font-semibold">{fmtMoney(s.netPay)}</Td>
                   <Td>
                     <div className="flex gap-1">
-                      <button onClick={() => setPrintSlip(s)} className="rounded p-1.5 text-[#D6336C] hover:bg-[#D6336C]/10"><AppIcon name="printer" size={14} /></button>
+                      <button onClick={() => setPrintSlip(s)} className="rounded p-1.5 text-[#2554C7] hover:bg-[#2554C7]/10"><AppIcon name="printer" size={14} /></button>
                       <button onClick={() => delSlip(s.id)} className="rounded p-1.5 text-[#B23A3A] hover:bg-[#B23A3A]/10"><AppIcon name="delete" size={14} /></button>
                     </div>
                   </Td>
@@ -2430,8 +2430,8 @@ function StaffTab({ staff, setStaff, salarySlips, setSalarySlips }) {
             <Field label="Basic Salary (BHD)" required><TextInput type="number" step="0.001" value={modal.basicSalary} onChange={e => setModal({ ...modal, basicSalary: e.target.value })} required /></Field>
             <Field label="House Allowance (BHD)"><TextInput type="number" step="0.001" value={modal.houseAllowance} onChange={e => setModal({ ...modal, houseAllowance: e.target.value })} /></Field>
             <Field label="Transport Allowance (BHD)"><TextInput type="number" step="0.001" value={modal.transportAllowance} onChange={e => setModal({ ...modal, transportAllowance: e.target.value })} /></Field>
-            <div className="mb-3 rounded-lg bg-[#FFF6F8] p-3 text-sm">
-              Total: <span className="cbl-heading text-base text-[#D6336C]">{fmtMoney(Number(modal.basicSalary || 0) + Number(modal.houseAllowance || 0) + Number(modal.transportAllowance || 0))}</span>
+            <div className="mb-3 rounded-lg bg-[#F7F9FC] p-3 text-sm">
+              Total: <span className="cbl-heading text-base text-[#2554C7]">{fmtMoney(Number(modal.basicSalary || 0) + Number(modal.houseAllowance || 0) + Number(modal.transportAllowance || 0))}</span>
             </div>
             <Btn type="submit" className="w-full justify-center">Save Staff</Btn>
           </form>
@@ -2458,8 +2458,8 @@ function StaffTab({ staff, setStaff, salarySlips, setSalarySlips }) {
               <Field label="Bonus (BHD)"><TextInput type="number" step="0.001" value={slipModal.bonus} onChange={e => setSlipModal({ ...slipModal, bonus: e.target.value })} /></Field>
               <Field label="Deductions (BHD)"><TextInput type="number" step="0.001" value={slipModal.deductions} onChange={e => setSlipModal({ ...slipModal, deductions: e.target.value })} /></Field>
             </div>
-            <div className="mb-3 rounded-lg bg-[#FFF6F8] p-3 text-sm">
-              Net Pay: <span className="cbl-heading text-base text-[#D6336C]">
+            <div className="mb-3 rounded-lg bg-[#F7F9FC] p-3 text-sm">
+              Net Pay: <span className="cbl-heading text-base text-[#2554C7]">
                 {fmtMoney(Number(slipModal.basicSalary || 0) + Number(slipModal.houseAllowance || 0) + Number(slipModal.transportAllowance || 0) + Number(slipModal.bonus || 0) - Number(slipModal.deductions || 0))}
               </span>
             </div>
@@ -2477,7 +2477,7 @@ function SalarySlipPrint({ slip, staffName, onClose }) {
   const gross = Number(slip.basicSalary || 0) + Number(slip.houseAllowance || 0) + Number(slip.transportAllowance || 0);
   return (
     <Modal title="Salary Slip" onClose={onClose} wide>
-      <div id="salary-slip-print" className="rounded-xl border border-[#f5d3e0] p-6">
+      <div id="salary-slip-print" className="rounded-xl border border-[#E2E8F0] p-6">
         <div className="mb-4 text-center">
           <BrandMark variant="dark" className="mx-auto mb-2 h-9 w-auto object-contain" />
           <div className="text-xs text-[#2B2320]/50">Salary Slip — {monthLabel(slip.month, slip.year)}</div>
@@ -2485,12 +2485,12 @@ function SalarySlipPrint({ slip, staffName, onClose }) {
         <div className="mb-4 flex justify-between text-sm"><span>Employee</span><span className="font-medium">{staffName}</span></div>
         <table className="w-full text-sm">
           <tbody>
-            <tr className="border-b border-[#fbe8ef]"><td className="py-2">Basic Salary</td><td className="py-2 text-right">{fmtMoney(slip.basicSalary)}</td></tr>
-            <tr className="border-b border-[#fbe8ef]"><td className="py-2">House Allowance</td><td className="py-2 text-right">{fmtMoney(slip.houseAllowance)}</td></tr>
-            <tr className="border-b border-[#fbe8ef]"><td className="py-2">Transport Allowance</td><td className="py-2 text-right">{fmtMoney(slip.transportAllowance)}</td></tr>
-            <tr className="border-b border-[#fbe8ef] font-medium"><td className="py-2">Gross Salary</td><td className="py-2 text-right">{fmtMoney(gross)}</td></tr>
-            <tr className="border-b border-[#fbe8ef]"><td className="py-2">Bonus</td><td className="py-2 text-right">{fmtMoney(slip.bonus)}</td></tr>
-            <tr className="border-b border-[#fbe8ef]"><td className="py-2">Deductions</td><td className="py-2 text-right">-{fmtMoney(slip.deductions)}</td></tr>
+            <tr className="border-b border-[#EEF2F7]"><td className="py-2">Basic Salary</td><td className="py-2 text-right">{fmtMoney(slip.basicSalary)}</td></tr>
+            <tr className="border-b border-[#EEF2F7]"><td className="py-2">House Allowance</td><td className="py-2 text-right">{fmtMoney(slip.houseAllowance)}</td></tr>
+            <tr className="border-b border-[#EEF2F7]"><td className="py-2">Transport Allowance</td><td className="py-2 text-right">{fmtMoney(slip.transportAllowance)}</td></tr>
+            <tr className="border-b border-[#EEF2F7] font-medium"><td className="py-2">Gross Salary</td><td className="py-2 text-right">{fmtMoney(gross)}</td></tr>
+            <tr className="border-b border-[#EEF2F7]"><td className="py-2">Bonus</td><td className="py-2 text-right">{fmtMoney(slip.bonus)}</td></tr>
+            <tr className="border-b border-[#EEF2F7]"><td className="py-2">Deductions</td><td className="py-2 text-right">-{fmtMoney(slip.deductions)}</td></tr>
             <tr className="font-semibold"><td className="py-2">Net Pay</td><td className="py-2 text-right">{fmtMoney(slip.netPay)}</td></tr>
           </tbody>
         </table>
@@ -2535,10 +2535,10 @@ function LoansTab({ loans, setLoans }) {
       ) : (
         <div className="cbl-card overflow-x-auto rounded-2xl bg-white shadow-sm">
           <table className="w-full">
-            <thead className="border-b border-[#fbe8ef]"><tr><Th>Date</Th><Th>Direction</Th><Th>Amount</Th><Th>Notes</Th><Th></Th></tr></thead>
-            <tbody className="divide-y divide-[#fbe8ef]">
+            <thead className="border-b border-[#EEF2F7]"><tr><Th>Date</Th><Th>Direction</Th><Th>Amount</Th><Th>Notes</Th><Th></Th></tr></thead>
+            <tbody className="divide-y divide-[#EEF2F7]">
               {sorted.map(l => (
-                <tr key={l.id} className="hover:bg-[#FFF6F8]">
+                <tr key={l.id} className="hover:bg-[#F7F9FC]">
                   <Td>{fmtDate(l.date)}</Td>
                   <Td><Pill tone={l.direction === "to" ? "rose" : "green"}>{l.direction === "to" ? "Loan to Sadaque" : "Loan from Sadaque"}</Pill></Td>
                   <Td>{fmtMoney(l.amount)}</Td>
@@ -2618,7 +2618,7 @@ function PermissionsTab({ permissions, setPermissions }) {
                         type="checkbox"
                         checked={!!perm[t.key]}
                         onChange={() => toggle(u.username, t.key)}
-                        className="h-4 w-4 accent-[#D6336C]"
+                        className="h-4 w-4 accent-[#2554C7]"
                       />
                       <AppIcon name={t.icon} size={14} />
                       {t.label}
@@ -2630,7 +2630,7 @@ function PermissionsTab({ permissions, setPermissions }) {
           })}
         </div>
       )}
-      <div className="mt-4 rounded-lg bg-[#C9A15A]/10 px-3 py-2 text-xs text-[#8a6a2f]">
+      <div className="mt-4 rounded-lg bg-[#0D9488]/10 px-3 py-2 text-xs text-[#0F6B5C]">
         Changes apply the next time that staff member opens or reloads the app.
       </div>
     </div>
@@ -2722,7 +2722,7 @@ function ReportsTab({ sales, expenses, custMap, suppliers, suppMap, purchases, s
               <div className="rounded-xl bg-[#4E7C59]/10 p-3 text-center"><div className="text-[10px] uppercase text-[#2B2320]/50">Sales</div><div className="cbl-heading text-[#4E7C59]">{fmtMoney(combined.salesTotal)}</div></div>
               <div className="rounded-xl bg-[#B23A3A]/10 p-3 text-center"><div className="text-[10px] uppercase text-[#2B2320]/50">Expenses</div><div className="cbl-heading text-[#B23A3A]">{fmtMoney(combined.expensesTotal)}</div></div>
               <div className="rounded-xl bg-[#C97B2E]/10 p-3 text-center"><div className="text-[10px] uppercase text-[#2B2320]/50">Supplier Payments</div><div className="cbl-heading text-[#C97B2E]">{fmtMoney(combined.paymentsTotal)}</div></div>
-              <div className="rounded-xl bg-[#D6336C]/10 p-3 text-center"><div className="text-[10px] uppercase text-[#2B2320]/50">Purchases</div><div className="cbl-heading text-[#D6336C]">{fmtMoney(combined.purchasesTotal)}</div></div>
+              <div className="rounded-xl bg-[#2554C7]/10 p-3 text-center"><div className="text-[10px] uppercase text-[#2B2320]/50">Purchases</div><div className="cbl-heading text-[#2554C7]">{fmtMoney(combined.purchasesTotal)}</div></div>
             </div>
 
             {[
@@ -2739,7 +2739,7 @@ function ReportsTab({ sales, expenses, custMap, suppliers, suppMap, purchases, s
                   <table className="w-full text-xs">
                     <tbody>
                       {section.rows.map((r) => (
-                        <tr key={r.id} className="border-b border-[#fbe8ef]">
+                        <tr key={r.id} className="border-b border-[#EEF2F7]">
                           {section.cols(r).map((c, i) => <td key={i} className="py-1.5">{c}</td>)}
                           <td className="py-1.5 text-right font-medium">{fmtMoney(r.amount)}</td>
                         </tr>
@@ -2895,7 +2895,7 @@ function WhatsAppTab({ customers, customerStats }) {
     <div>
       <SectionHeader title="WhatsApp Offers" desc="Compose one message, then send it to each selected customer's WhatsApp" />
 
-      <div className="mb-4 rounded-lg bg-[#C9A15A]/10 px-3 py-2 text-xs text-[#8a6a2f]">
+      <div className="mb-4 rounded-lg bg-[#0D9488]/10 px-3 py-2 text-xs text-[#0F6B5C]">
         True one-click bulk WhatsApp broadcasting needs the official WhatsApp Business API (Meta business verification + a paid provider). Without that, each message below opens as a pre-filled WhatsApp chat you tap "Send" on — fast, but one tap per customer rather than one tap for everyone.
       </div>
 
@@ -2903,7 +2903,7 @@ function WhatsAppTab({ customers, customerStats }) {
         <Field label="Offer Message"><TextArea value={message} onChange={e => setMessage(e.target.value)} className="min-h-[90px]" /></Field>
         <div className="flex flex-wrap gap-2">
           {[["all", "All Customers"], ["regular", "Regular Customers"], ["inactive", "Inactive 30+ days"]].map(([k, l]) => (
-            <button key={k} onClick={() => setAudience(k)} className={`rounded-full px-3 py-1 text-xs font-medium ${audience === k ? "bg-[#D6336C] text-white" : "bg-white text-[#2B2320]/60 border border-[#f5d3e0]"}`}>{l}</button>
+            <button key={k} onClick={() => setAudience(k)} className={`rounded-full px-3 py-1 text-xs font-medium ${audience === k ? "bg-[#2554C7] text-white" : "bg-white text-[#2B2320]/60 border border-[#E2E8F0]"}`}>{l}</button>
           ))}
         </div>
       </div>
@@ -2913,10 +2913,10 @@ function WhatsAppTab({ customers, customerStats }) {
       ) : (
         <div className="cbl-card overflow-x-auto rounded-2xl bg-white shadow-sm">
           <table className="w-full">
-            <thead className="border-b border-[#fbe8ef]"><tr><Th></Th><Th>Name</Th><Th>Mobile</Th><Th></Th></tr></thead>
-            <tbody className="divide-y divide-[#fbe8ef]">
+            <thead className="border-b border-[#EEF2F7]"><tr><Th></Th><Th>Name</Th><Th>Mobile</Th><Th></Th></tr></thead>
+            <tbody className="divide-y divide-[#EEF2F7]">
               {audienceList.map(c => (
-                <tr key={c.id} className="hover:bg-[#FFF6F8]">
+                <tr key={c.id} className="hover:bg-[#F7F9FC]">
                   <Td><input type="checkbox" checked={selected.has(c.id)} onChange={() => toggle(c.id)} /></Td>
                   <Td className="font-medium">{c.name}</Td>
                   <Td>{c.mobile}</Td>
@@ -2966,14 +2966,14 @@ function LoginScreen({ onLogin }) {
   return (
     <div
       className="flex min-h-screen items-center justify-center px-4"
-      style={{ background: "radial-gradient(1200px 700px at 15% 10%, #F0678F 0%, transparent 55%), radial-gradient(1000px 700px at 90% 90%, #7A1B4A 0%, transparent 55%), linear-gradient(160deg,#E0447C 0%,#B0225F 45%,#4A0E29 100%)" }}
+      style={{ background: "radial-gradient(1200px 700px at 15% 10%, #3B82F6 0%, transparent 55%), radial-gradient(1000px 700px at 90% 90%, #172554 0%, transparent 55%), linear-gradient(160deg,#2F6FE0 0%,#1E4FC4 45%,#0B1220 100%)" }}
     >
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;500;600;700&display=swap');`}</style>
       <form onSubmit={submit} className="relative w-full max-w-sm rounded-[28px] bg-white/95 p-8 text-center shadow-2xl backdrop-blur">
-        <div className="pointer-events-none absolute inset-3 rounded-[20px] border border-[#E8C888]/50"></div>
+        <div className="pointer-events-none absolute inset-3 rounded-[20px] border border-[#93C5FD]/50"></div>
         <BrandMark variant="dark" className="mx-auto mb-2 h-12 w-auto object-contain" />
         <div className="cbl-heading mb-5 text-sm uppercase tracking-[0.15em] text-[#2B2320]">Cherrys Beauty Lounge</div>
-        <div className="mx-auto mb-5 h-px w-16 bg-gradient-to-r from-transparent via-[#D6336C] to-transparent"></div>
+        <div className="mx-auto mb-5 h-px w-16 bg-gradient-to-r from-transparent via-[#2554C7] to-transparent"></div>
         <p className="mb-6 text-xs uppercase tracking-[0.2em] text-[#2B2320]/40" style={{ fontFamily: "'Playfair Display', serif" }}>Staff Sign In</p>
 
         <div className="mb-3 text-left">
@@ -2983,7 +2983,7 @@ function LoginScreen({ onLogin }) {
             onChange={(e) => { setUsername(e.target.value); setErr(false); }}
             autoFocus
             autoCapitalize="none"
-            className="w-full rounded-lg border border-[#f5d3e0] bg-[#FFF6F8] px-3 py-2.5 text-sm outline-none focus:border-[#D6336C]"
+            className="w-full rounded-lg border border-[#E2E8F0] bg-[#F7F9FC] px-3 py-2.5 text-sm outline-none focus:border-[#2554C7]"
             placeholder="e.g. staff1"
           />
         </div>
@@ -2994,11 +2994,11 @@ function LoginScreen({ onLogin }) {
             inputMode="numeric"
             value={pin}
             onChange={(e) => { setPin(e.target.value); setErr(false); }}
-            className="w-full rounded-lg border border-[#f5d3e0] bg-[#FFF6F8] px-3 py-2.5 text-center text-lg tracking-[0.4em] outline-none focus:border-[#D6336C]"
+            className="w-full rounded-lg border border-[#E2E8F0] bg-[#F7F9FC] px-3 py-2.5 text-center text-lg tracking-[0.4em] outline-none focus:border-[#2554C7]"
           />
         </div>
         {err && <p className="mb-3 text-xs text-[#B23A3A]">Username or PIN not recognized.</p>}
-        <button type="submit" className="w-full rounded-lg py-2.5 text-sm font-medium text-white shadow-md" style={{ background: "linear-gradient(135deg,#D6336C,#A61E5C)" }}>
+        <button type="submit" className="w-full rounded-lg py-2.5 text-sm font-medium text-white shadow-md" style={{ background: "linear-gradient(135deg,#2554C7,#1D3FA0)" }}>
           Sign In
         </button>
         <p className="mt-5 text-[10px] text-[#2B2320]/30">Cherrys Beauty Lounge · Internal Team Access</p>
@@ -3035,7 +3035,7 @@ function Root() {
 const rootEl = document.getElementById("root");
 if (!SUPABASE_URL || SUPABASE_URL.includes("YOUR-PROJECT")) {
   rootEl.innerHTML = `
-    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:sans-serif;padding:24px;text-align:center;background:#FFF6F8;color:#2B2320;">
+    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:sans-serif;padding:24px;text-align:center;background:#F7F9FC;color:#2B2320;">
       <div style="max-width:420px;">
         <div style="font-size:32px;margin-bottom:8px;">⚙️</div>
         <h1 style="margin:0 0 8px;">Setup needed</h1>
